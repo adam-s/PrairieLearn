@@ -885,7 +885,7 @@
     },
     "prairieTestAuthSecret": {
       "type": "string",
-      "default": "THIS_SHOULD_MATCH_THE_PT_KEY"
+      "default": "CHANGE_ME_PRAIRIE_TEST_SHARED_AUTH_SECRET"
     },
     "openTelemetryEnabled": {
       "type": "boolean",
