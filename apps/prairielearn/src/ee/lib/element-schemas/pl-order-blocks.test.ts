@@ -1,7 +1,14 @@
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { assert, describe, it } from 'vitest';
 
 import { lintQuestionHtml } from '../htmlMustacheLinterNode.js';
 import { validateHTML } from '../validateHTML.js';
+
+import { serializeElementSchemas } from './index.js';
+
+const repoRoot = path.resolve(import.meta.dirname, '../../../../../..');
 
 async function lintMessages(html: string): Promise<string[]> {
   const diagnostics = await lintQuestionHtml(html);
@@ -34,6 +41,22 @@ describe('pl-order-blocks schema', () => {
     `);
 
     assert.deepEqual(messages, []);
+  });
+
+  it('accepts DAG block groups without direct answer blocks', async () => {
+    const html = `
+      <pl-order-blocks answers-name="blocks" grading-method="dag">
+        <pl-block-group tag="case-a">
+          <pl-answer correct="true" tag="a1">First case</pl-answer>
+          <pl-answer correct="true" tag="a2" depends="a1">Finish case</pl-answer>
+        </pl-block-group>
+      </pl-order-blocks>
+    `;
+    const messages = await lintMessages(html);
+    const result = await validateHTML(html, false);
+
+    assert.deepEqual(messages, []);
+    assert.deepEqual(result.errors, []);
   });
 
   it('requires answers-name', async () => {
@@ -109,6 +132,19 @@ describe('pl-order-blocks schema', () => {
     assert.isTrue(messages.some((message) => message.includes("requires 'final'")));
   });
 
+  it('counts incorrect answers inside DAG block groups', async () => {
+    const messages = await lintMessages(`
+      <pl-order-blocks answers-name="blocks" grading-method="dag" min-incorrect="1">
+        <pl-block-group tag="case-a">
+          <pl-answer correct="true" tag="a1">First case</pl-answer>
+          <pl-answer correct="false">Distractor</pl-answer>
+        </pl-block-group>
+      </pl-order-blocks>
+    `);
+
+    assert.deepEqual(messages, []);
+  });
+
   it('allows validateHTML to accept order blocks', async () => {
     const result = await validateHTML(
       `
@@ -120,5 +156,41 @@ describe('pl-order-blocks schema', () => {
     );
 
     assert.deepEqual(result.errors, []);
+  });
+
+  it('keeps committed element schemas in sync with the TypeScript schema sources', () => {
+    const serialized = serializeElementSchemas();
+
+    for (const [elementName, schema] of Object.entries(serialized.schemas)) {
+      const filePath = path.join(
+        repoRoot,
+        `apps/prairielearn/elements/${elementName}/${elementName}.schema.json`,
+      );
+      assert.deepEqual(JSON.parse(fs.readFileSync(filePath, 'utf8')), schema);
+    }
+
+    for (const [elementName, childSchemas] of Object.entries(serialized.childSchemas)) {
+      for (const [childName, schema] of Object.entries(childSchemas)) {
+        const filePath = path.join(
+          repoRoot,
+          `apps/prairielearn/elements/${elementName}/${childName}.schema.json`,
+        );
+        assert.deepEqual(JSON.parse(fs.readFileSync(filePath, 'utf8')), schema);
+      }
+    }
+  });
+
+  it('wires order-blocks schemas into the CLI config', () => {
+    const config = fs.readFileSync(path.join(repoRoot, '.htmlmustache.jsonc'), 'utf8');
+
+    assert.include(
+      config,
+      './apps/prairielearn/elements/pl-order-blocks/pl-order-blocks.schema.json',
+    );
+    assert.include(config, './apps/prairielearn/elements/pl-order-blocks/pl-answer.schema.json');
+    assert.include(
+      config,
+      './apps/prairielearn/elements/pl-order-blocks/pl-block-group.schema.json',
+    );
   });
 });

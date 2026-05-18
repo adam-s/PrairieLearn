@@ -15,19 +15,22 @@ const check = process.argv[2] === 'check';
 const generatedFiles: Record<string, unknown> = {};
 const serialized = serializeElementSchemas();
 
-generatedFiles[
-  path.resolve(
+function elementSchemaPath(elementName: string, schemaName = elementName) {
+  return path.resolve(
     import.meta.dirname,
-    '../apps/prairielearn/elements/pl-multiple-choice/pl-multiple-choice.schema.json',
-  )
-] = serialized.schemas['pl-multiple-choice'];
+    `../apps/prairielearn/elements/${elementName}/${schemaName}.schema.json`,
+  );
+}
 
-generatedFiles[
-  path.resolve(
-    import.meta.dirname,
-    '../apps/prairielearn/elements/pl-multiple-choice/pl-answer.schema.json',
-  )
-] = serialized.childSchemas['pl-multiple-choice']['pl-answer'];
+for (const [elementName, schema] of Object.entries(serialized.schemas)) {
+  generatedFiles[elementSchemaPath(elementName)] = schema;
+}
+
+for (const [elementName, childSchemas] of Object.entries(serialized.childSchemas)) {
+  for (const [childName, schema] of Object.entries(childSchemas)) {
+    generatedFiles[elementSchemaPath(elementName, childName)] = schema;
+  }
+}
 
 async function stringify(filePath: string, value: unknown): Promise<string> {
   const config = await prettier.resolveConfig(filePath);

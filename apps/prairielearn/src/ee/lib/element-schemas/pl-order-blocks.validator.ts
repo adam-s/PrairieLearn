@@ -71,7 +71,12 @@ function optionalLiteralStringAttribute(
 }
 
 function allAnswers(element: TagElement): TagElement[] {
-  return [...element.childrenWithTag('pl-answer')];
+  return [
+    ...element.childrenWithTag('pl-answer'),
+    ...element
+      .childrenWithTag('pl-block-group')
+      .flatMap((group) => group.childrenWithTag('pl-answer')),
+  ];
 }
 
 function hasOptionalBlocks(element: TagElement): boolean {
@@ -118,7 +123,7 @@ function validateTagCharacters(element: TagElement, context: ValidatorContext) {
 
 export const validators: TagValidator[] = defineTagValidators('pl-order-blocks', {
   'pl/order-blocks-children'(element, context) {
-    if (element.childrenWithTag('pl-answer').length === 0 && allAnswers(element).length === 0) {
+    if (allAnswers(element).length === 0) {
       context.reportElement(element, 'pl-order-blocks element must have at least 1 answer block.');
     }
   },
@@ -277,13 +282,9 @@ export const validators: TagValidator[] = defineTagValidators('pl-order-blocks',
 });
 
 export const blockGroupValidators: TagValidator[] = defineTagValidators('pl-block-group', {
-  'pl/order-blocks-block-group-answer-attributes'(element, context) {
-    validateAnswerAttributes(element, context, DAG_ANSWER_ATTRIBUTES);
-  },
-
-  'pl/order-blocks-block-group-optional-blocks'(element, context) {
-    if (!hasOptionalBlocks(element)) return;
-
-    context.reportElement(element, 'Block groups not supported with the optional-lines feature.');
+  'pl/order-blocks-block-group-children'(element, context) {
+    if (allAnswers(element).length === 0) {
+      context.reportElement(element, 'pl-block-group element must have at least 1 answer block.');
+    }
   },
 });

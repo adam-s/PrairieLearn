@@ -231,15 +231,19 @@
     },
     {
       "name": "pl-order-blocks",
+      "schema": "./apps/prairielearn/elements/pl-order-blocks/pl-order-blocks.schema.json",
       "children": [
         {
-          "name": "pl-answer"
+          "name": "pl-answer",
+          "schema": "./apps/prairielearn/elements/pl-order-blocks/pl-answer.schema.json"
         },
         {
           "name": "pl-block-group",
+          "schema": "./apps/prairielearn/elements/pl-order-blocks/pl-block-group.schema.json",
           "children": [
             {
-              "name": "pl-answer"
+              "name": "pl-answer",
+              "schema": "./apps/prairielearn/elements/pl-order-blocks/pl-answer.schema.json"
             }
           ]
         }
