@@ -2,7 +2,10 @@ import {
   type TagElement,
   type TagValidator,
   type ValidatorContext,
+  attr,
   defineTagValidators,
+  validateAttributes,
+  validateElement,
 } from '@reteps/tree-sitter-htmlmustache/linter';
 
 import { BOOLEAN_TRUE_VALUES, isFalseValue } from './htmlmustache-plugin-utils.ts';
@@ -42,32 +45,28 @@ const FEEDBACK_METHODS = new Set(['dag', 'ranking']);
 const TAG_SPECIAL_CHARACTERS = new Set('*&^$@!~[]{}()|:@?/\\'.split(''));
 
 function isLiteralTrueAttribute(element: TagElement, attribute: string): boolean {
-  const value = element.getLiteralAttribute(attribute);
-  return typeof value === 'string' && BOOLEAN_TRUE_VALUES.includes(value);
+  return (
+    attr(element, attribute).literalMap((value) =>
+      typeof value === 'string' ? BOOLEAN_TRUE_VALUES.includes(value) : undefined,
+    ) ?? false
+  );
 }
 
 function isLiteralFalseAttribute(element: TagElement, attribute: string): boolean {
-  const value = element.getLiteralAttribute(attribute);
+  const value = attr(element, attribute).literal();
   return value !== undefined && isFalseValue(value);
 }
 
 function literalIntAttribute(element: TagElement, attribute: string): number | undefined {
-  const value = element.getLiteralAttribute(attribute);
-  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return undefined;
-  return Number(value);
+  return attr(element, attribute).literalMap((value) =>
+    typeof value === 'string' && /^-?\d+$/.test(value) ? Number(value) : undefined,
+  );
 }
 
-function literalStringAttribute(element: TagElement, attribute: string, fallback: string): string {
-  const value = element.getLiteralAttribute(attribute);
-  return typeof value === 'string' ? value : fallback;
-}
-
-function optionalLiteralStringAttribute(
-  element: TagElement,
-  attribute: string,
-): string | undefined {
-  const value = element.getLiteralAttribute(attribute);
-  return typeof value === 'string' ? value : undefined;
+function literalStringAttribute(element: TagElement, attribute: string): string | undefined {
+  return attr(element, attribute).literalMap((value) =>
+    typeof value === 'string' ? value : undefined,
+  );
 }
 
 function allAnswers(element: TagElement): TagElement[] {
@@ -81,10 +80,8 @@ function allAnswers(element: TagElement): TagElement[] {
 
 function hasOptionalBlocks(element: TagElement): boolean {
   return [
-    ...allAnswers(element).map((answer) => answer.getLiteralAttribute('depends')),
-    ...element
-      .childrenWithTag('pl-block-group')
-      .map((group) => group.getLiteralAttribute('depends')),
+    ...allAnswers(element).map((answer) => attr(answer, 'depends').literal()),
+    ...element.childrenWithTag('pl-block-group').map((group) => attr(group, 'depends').literal()),
   ].some((depends) => typeof depends === 'string' && depends.includes('|'));
 }
 
@@ -94,22 +91,18 @@ function validateAnswerAttributes(
   allowedAttributes: Set<string>,
 ) {
   for (const answer of allAnswers(element)) {
-    for (const attribute of Object.keys(answer.attributes)) {
-      if (!allowedAttributes.has(attribute)) {
-        context.reportAttribute(
-          answer,
-          attribute,
-          `pl-answer: ${attribute} is not valid with this pl-order-blocks grading method.`,
-        );
-      }
-    }
+    validateAttributes(context, answer, Object.keys(answer.attributes), {
+      invalid: (_e, attribute) => !allowedAttributes.has(attribute.name),
+      message: (_e, attribute) =>
+        `pl-answer: ${attribute.name} is not valid with this pl-order-blocks grading method.`,
+    });
   }
 }
 
 function validateTagCharacters(element: TagElement, context: ValidatorContext) {
   const taggedElements = [...allAnswers(element), ...element.childrenWithTag('pl-block-group')];
   for (const child of taggedElements) {
-    const tag = child.getLiteralAttribute('tag');
+    const tag = attr(child, 'tag').literal();
     if (typeof tag !== 'string') continue;
     if ([...tag].some((char) => TAG_SPECIAL_CHARACTERS.has(char))) {
       context.reportAttribute(
@@ -123,13 +116,14 @@ function validateTagCharacters(element: TagElement, context: ValidatorContext) {
 
 export const validators: TagValidator[] = defineTagValidators('pl-order-blocks', {
   'pl/order-blocks-children'(element, context) {
-    if (allAnswers(element).length === 0) {
-      context.reportElement(element, 'pl-order-blocks element must have at least 1 answer block.');
-    }
+    validateElement(context, element, {
+      invalid: (e) => allAnswers(e).length === 0,
+      message: 'pl-order-blocks element must have at least 1 answer block.',
+    });
   },
 
   'pl/order-blocks-grading-method-attributes'(element, context) {
-    const gradingMethod = literalStringAttribute(element, 'grading-method', 'ordered');
+    const gradingMethod = literalStringAttribute(element, 'grading-method') ?? 'ordered';
     const allowedAttributes = GRADING_METHOD_ANSWER_ATTRIBUTES[gradingMethod];
     if (!allowedAttributes) return;
 
@@ -143,93 +137,70 @@ export const validators: TagValidator[] = defineTagValidators('pl-order-blocks',
   },
 
   'pl/order-blocks-cross-attribute-options'(element, context) {
-    const gradingMethod = literalStringAttribute(element, 'grading-method', 'ordered');
-    const format = literalStringAttribute(element, 'format', 'default');
-    const feedback = literalStringAttribute(element, 'feedback', 'none');
-    const partialCredit = optionalLiteralStringAttribute(element, 'partial-credit');
-    const sourceBlocksOrder = literalStringAttribute(
-      element,
-      'source-blocks-order',
-      'alphabetized',
-    );
-    const distractorOrder = literalStringAttribute(element, 'distractor-order', 'inherit');
+    const gradingMethod = literalStringAttribute(element, 'grading-method') ?? 'ordered';
+    const format = literalStringAttribute(element, 'format') ?? 'default';
+    const feedback = literalStringAttribute(element, 'feedback') ?? 'none';
+    const partialCredit = literalStringAttribute(element, 'partial-credit');
+    const sourceBlocksOrder =
+      literalStringAttribute(element, 'source-blocks-order') ?? 'alphabetized';
+    const distractorOrder = literalStringAttribute(element, 'distractor-order') ?? 'inherit';
 
-    if (format !== 'code' && element.hasAttribute('code-language')) {
-      context.reportAttribute(
-        element,
-        'code-language',
-        'code-language attribute may only be used with format="code".',
-      );
-    }
+    validateElement(context, element, {
+      reportAttribute: 'code-language',
+      invalid: (e) => format !== 'code' && attr(e, 'code-language').present(),
+      message: 'code-language attribute may only be used with format="code".',
+    });
 
-    if (partialCredit !== undefined && !LCS_GRADABLE_METHODS.has(gradingMethod)) {
-      context.reportAttribute(
-        element,
-        'partial-credit',
-        'partial-credit may only be used in the dag, ordered, and ranking grading modes.',
-      );
-    }
+    validateElement(context, element, {
+      reportAttribute: 'partial-credit',
+      invalid: () => partialCredit !== undefined && !LCS_GRADABLE_METHODS.has(gradingMethod),
+      message: 'partial-credit may only be used in the dag, ordered, and ranking grading modes.',
+    });
 
-    if (feedback !== 'none' && !FEEDBACK_METHODS.has(gradingMethod)) {
-      context.reportAttribute(
-        element,
-        'feedback',
-        `feedback type ${feedback} is not available with the ${gradingMethod} grading-method.`,
-      );
-    }
+    validateElement(context, element, {
+      reportAttribute: 'feedback',
+      invalid: () => feedback !== 'none' && !FEEDBACK_METHODS.has(gradingMethod),
+      message: `feedback type ${feedback} is not available with the ${gradingMethod} grading-method.`,
+    });
 
-    if (
-      isLiteralTrueAttribute(element, 'inline') &&
-      isLiteralTrueAttribute(element, 'indentation')
-    ) {
-      context.reportAttribute(
-        element,
-        'indentation',
-        'indentation may not be used when inline is true.',
-      );
-    }
+    validateElement(context, element, {
+      reportAttribute: 'indentation',
+      invalid: (e) =>
+        isLiteralTrueAttribute(e, 'inline') && isLiteralTrueAttribute(e, 'indentation'),
+      message: 'indentation may not be used when inline is true.',
+    });
 
-    if (distractorOrder === 'random' && sourceBlocksOrder === 'random') {
-      context.reportAttribute(
-        element,
-        'distractor-order',
-        'distractor-order="random" cannot be used with source-blocks-order="random".',
-      );
-    }
+    validateElement(context, element, {
+      reportAttribute: 'distractor-order',
+      invalid: () => distractorOrder === 'random' && sourceBlocksOrder === 'random',
+      message: 'distractor-order="random" cannot be used with source-blocks-order="random".',
+    });
   },
 
   'pl/order-blocks-answer-options'(element, context) {
     if (!isLiteralTrueAttribute(element, 'indentation')) {
       for (const answer of allAnswers(element)) {
-        if (answer.hasAttribute('indent')) {
-          context.reportAttribute(
-            answer,
-            'indent',
-            '<pl-answer> should not specify indentation if indentation is disabled.',
-          );
-        }
+        validateAttributes(context, answer, ['indent'], {
+          invalid: (_e, attribute) => attribute.present(),
+          message: '<pl-answer> should not specify indentation if indentation is disabled.',
+        });
       }
     }
 
     for (const answer of allAnswers(element)) {
-      if (answer.hasAttribute('ordering-feedback') && isLiteralFalseAttribute(answer, 'correct')) {
-        context.reportAttribute(
-          answer,
-          'ordering-feedback',
-          'ordering-feedback may only be used on blocks with correct=true.',
-        );
-      }
+      validateElement(context, answer, {
+        reportAttribute: 'ordering-feedback',
+        invalid: (a) =>
+          attr(a, 'ordering-feedback').present() && isLiteralFalseAttribute(a, 'correct'),
+        message: 'ordering-feedback may only be used on blocks with correct=true.',
+      });
 
-      if (
-        isLiteralTrueAttribute(answer, 'initially-placed') &&
-        isLiteralFalseAttribute(answer, 'correct')
-      ) {
-        context.reportAttribute(
-          answer,
-          'initially-placed',
-          'Incorrect blocks cannot be initially placed.',
-        );
-      }
+      validateElement(context, answer, {
+        reportAttribute: 'initially-placed',
+        invalid: (a) =>
+          isLiteralTrueAttribute(a, 'initially-placed') && isLiteralFalseAttribute(a, 'correct'),
+        message: 'Incorrect blocks cannot be initially placed.',
+      });
     }
 
     validateTagCharacters(element, context);
@@ -242,27 +213,24 @@ export const validators: TagValidator[] = defineTagValidators('pl-order-blocks',
     const minIncorrect = literalIntAttribute(element, 'min-incorrect');
     const maxIncorrect = literalIntAttribute(element, 'max-incorrect');
 
-    if (minIncorrect !== undefined && minIncorrect > incorrectAnswerCount) {
-      context.reportAttribute(
-        element,
-        'min-incorrect',
-        'min-incorrect may not exceed the number of incorrect <pl-answer> blocks.',
-      );
-    }
-    if (maxIncorrect !== undefined && maxIncorrect > incorrectAnswerCount) {
-      context.reportAttribute(
-        element,
-        'max-incorrect',
-        'max-incorrect may not exceed the number of incorrect <pl-answer> blocks.',
-      );
-    }
-    if (minIncorrect !== undefined && maxIncorrect !== undefined && minIncorrect > maxIncorrect) {
-      context.reportAttribute(
-        element,
-        'min-incorrect',
-        'min-incorrect must be smaller than max-incorrect.',
-      );
-    }
+    validateElement(context, element, {
+      reportAttribute: 'min-incorrect',
+      invalid: () => minIncorrect !== undefined && minIncorrect > incorrectAnswerCount,
+      message: 'min-incorrect may not exceed the number of incorrect <pl-answer> blocks.',
+    });
+
+    validateElement(context, element, {
+      reportAttribute: 'max-incorrect',
+      invalid: () => maxIncorrect !== undefined && maxIncorrect > incorrectAnswerCount,
+      message: 'max-incorrect may not exceed the number of incorrect <pl-answer> blocks.',
+    });
+
+    validateElement(context, element, {
+      reportAttribute: 'min-incorrect',
+      invalid: () =>
+        minIncorrect !== undefined && maxIncorrect !== undefined && minIncorrect > maxIncorrect,
+      message: 'min-incorrect must be smaller than max-incorrect.',
+    });
   },
 
   'pl/order-blocks-optional-blocks'(element, context) {
@@ -283,8 +251,9 @@ export const validators: TagValidator[] = defineTagValidators('pl-order-blocks',
 
 export const blockGroupValidators: TagValidator[] = defineTagValidators('pl-block-group', {
   'pl/order-blocks-block-group-children'(element, context) {
-    if (allAnswers(element).length === 0) {
-      context.reportElement(element, 'pl-block-group element must have at least 1 answer block.');
-    }
+    validateElement(context, element, {
+      invalid: (e) => allAnswers(e).length === 0,
+      message: 'pl-block-group element must have at least 1 answer block.',
+    });
   },
 });
