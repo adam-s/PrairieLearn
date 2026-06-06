@@ -3,22 +3,13 @@ import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert, Button } from 'react-bootstrap';
 
-import { formatDate } from '@prairielearn/formatter';
 import { assertNever } from '@prairielearn/utils';
 
 import { getAppError } from '../../../lib/client/errors.js';
 import { useTRPC } from '../../../trpc/assessment/context.js';
 
+import { type TimeLimitAction, computeProposedClosingTime } from './proposedClosingTime.js';
 import { useInvalidateAssessmentInstancesList } from './useInvalidateAssessmentInstancesList.js';
-
-type TimeLimitAction =
-  | 'set_total'
-  | 'set_rem'
-  | 'set_exact'
-  | 'add'
-  | 'subtract'
-  | 'remove'
-  | 'expire';
 
 function TimeLimitExplanation({ action }: { action: TimeLimitAction }) {
   let explanation = '';
@@ -136,21 +127,13 @@ export function TimeLimitEditForm({
   }
 
   function proposedClosingTime() {
-    if (singleRow?.total_time_sec == null) return null;
-    const totalTime = Math.round(singleRow.total_time_sec);
-
-    let startDate = Temporal.Instant.from(singleRow.date).toZonedDateTimeISO(timezone);
-    if (form.action === 'set_total') {
-      startDate = startDate.add({ minutes: form.time_add });
-    } else if (form.action === 'set_rem') {
-      startDate = Temporal.Now.zonedDateTimeISO(timezone).add({ minutes: form.time_add });
-    } else if (form.action === 'add') {
-      startDate = startDate.add({ seconds: totalTime }).add({ minutes: form.time_add });
-    } else if (form.action === 'subtract') {
-      startDate = startDate.add({ seconds: totalTime }).subtract({ minutes: form.time_add });
-    }
-
-    return formatDate(new Date(startDate.epochMilliseconds), timezone);
+    return computeProposedClosingTime({
+      action: form.action,
+      timeAddMinutes: form.time_add,
+      totalTimeSec: singleRow?.total_time_sec ?? null,
+      startDateIso: singleRow?.date ?? '',
+      timezone,
+    });
   }
 
   function handleSubmit() {
