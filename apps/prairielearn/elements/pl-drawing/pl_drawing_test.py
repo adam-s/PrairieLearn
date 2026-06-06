@@ -1,3 +1,4 @@
+import copy
 import importlib
 import json
 import math
@@ -294,4 +295,49 @@ def test_grade_only_initial_objects_with_allow_blank_scores_zero() -> None:
 
     assert "test" not in data["format_errors"]
     assert "test" in data["partial_scores"]
+    assert math.isclose(data["partial_scores"]["test"]["score"], 0.0)
+
+
+def _grid_size_zero_html() -> str:
+    return (
+        '<pl-drawing answers-name="test" gradable="true" grid-size="0">'
+        '<pl-drawing-answer><pl-point x1="100" y1="100"></pl-point></pl-drawing-answer>'
+        "</pl-drawing>"
+    )
+
+
+def test_grade_grid_size_zero_uses_sensible_default_tol() -> None:
+    # Regression for #15050... (pl-drawing #15006): with grid-size=0 and no explicit
+    # tol, the default tol was 0.5*grid_size = 0, forcing pixel-perfect submissions.
+    # A few-pixel-off answer must now grade correct (default tol falls back to a
+    # sensible non-zero value).
+    element_html = _grid_size_zero_html()
+    data = make_question_data()
+    pl_drawing.prepare(element_html, data)
+
+    student = copy.deepcopy(data["correct_answers"]["test"])
+    for obj in student:
+        obj["left"] += 5
+        obj["top"] += 5
+    data["submitted_answers"]["test"] = student
+
+    pl_drawing.grade(element_html, data)
+
+    assert math.isclose(data["partial_scores"]["test"]["score"], 1.0)
+
+
+def test_grade_grid_size_zero_still_rejects_far_off_answer() -> None:
+    # The fallback tol must stay tight enough to reject a clearly-wrong answer.
+    element_html = _grid_size_zero_html()
+    data = make_question_data()
+    pl_drawing.prepare(element_html, data)
+
+    student = copy.deepcopy(data["correct_answers"]["test"])
+    for obj in student:
+        obj["left"] += 200
+        obj["top"] += 200
+    data["submitted_answers"]["test"] = student
+
+    pl_drawing.grade(element_html, data)
+
     assert math.isclose(data["partial_scores"]["test"]["score"], 0.0)

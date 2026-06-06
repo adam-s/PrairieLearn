@@ -81,4 +81,16 @@ drawing_defaults: DrawingDefaults = {
     "force-width": 60,
 }
 
+
+def default_tol(grid_size: float) -> float:
+    """Default position tolerance (in pixels) used when ``tol`` is not set.
+
+    Normally half the grid spacing. When the grid is disabled (``grid-size=0``),
+    ``0.5 * grid_size`` would be 0 and silently force pixel-perfect submissions;
+    fall back to half the default grid size so omitting ``tol`` stays reasonable.
+    """
+    if grid_size:
+        return grid_size / 2
+    return element_defaults["grid-size"] / 2
+
 no_submission_error = "There was no submitted answer.  Please place some objects on the canvas and try again."
