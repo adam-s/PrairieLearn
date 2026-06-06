@@ -617,16 +617,19 @@ export function TanstackTableCard<RowDataModel>({
           <ColumnManager table={table} topContent={columnManager?.topContent} />
           {columnManager?.buttons}
         </div>
-        <div className="ms-auto d-flex align-items-center gap-1 text-muted text-nowrap">
+        <div className="ms-auto d-flex align-items-center gap-2 text-muted text-nowrap">
           {onResetColumnFilters && (
-            <OverlayTrigger overlay={<Tooltip>Clear filters</Tooltip>}>
+            <OverlayTrigger overlay={<Tooltip>Clear active filters</Tooltip>}>
               <button
                 type="button"
-                className="btn btn-link btn-sm text-muted p-0"
-                aria-label="Clear filters"
+                className="btn btn-sm d-inline-flex align-items-center gap-1 py-0 px-2 rounded-pill bg-warning-subtle text-warning-emphasis border border-warning-subtle"
+                aria-label="Active filters — click to clear"
+                data-testid="active-filters-indicator"
                 onClick={onResetColumnFilters}
               >
-                <i className="bi bi-x-circle" aria-hidden="true" />
+                <i className="bi bi-funnel-fill" aria-hidden="true" />
+                <span>Filtered</span>
+                <i className="bi bi-x-lg" aria-hidden="true" />
               </button>
             </OverlayTrigger>
           )}
