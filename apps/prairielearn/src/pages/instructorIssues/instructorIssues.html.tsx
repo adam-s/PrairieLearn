@@ -225,7 +225,11 @@ function IssueRow({
     `Hello ${issue.user_name},\n\nRegarding the issue of:\n\n"${issue.student_message || '-'}"\n\nWe've...`,
   )}`;
   const questionPreviewUrl = `${urlPrefix}/question/${issue.question_id}/`;
-  const studentViewUrl = `/pl/course_instance/${issue.course_instance_id}/instance_question/${issue.instance_question_id}/?variant_id=${issue.variant_id}`;
+  // Only add a variant query param when there is a value. A null variant_id/variant_seed
+  // (e.g. the variant was deleted) would otherwise render `variant_id=null`, an invalid URL (issue 1980).
+  const variantIdQuery = issue.variant_id != null ? `?variant_id=${issue.variant_id}` : '';
+  const variantSeedQuery = issue.variant_seed != null ? `?variant_seed=${issue.variant_seed}` : '';
+  const studentViewUrl = `/pl/course_instance/${issue.course_instance_id}/instance_question/${issue.instance_question_id}/${variantIdQuery}`;
   const manualGradingUrl = `/pl/course_instance/${issue.course_instance_id}/instructor/assessment/${issue.assessment_id}/manual_grading/instance_question/${issue.instance_question_id}`;
   const assessmentInstanceUrl = `/pl/course_instance/${issue.course_instance_id}/instructor/assessment_instance/${issue.assessment_instance_id}`;
 
@@ -252,12 +256,12 @@ function IssueRow({
             // Issue not associated to an instance question (originates from question preview)
             <>
               {' '}
-              (<a href={`${questionPreviewUrl}?variant_id=${issue.variant_id}`}>instructor view</a>)
+              (<a href={`${questionPreviewUrl}${variantIdQuery}`}>instructor view</a>)
             </>
           ) : issue.showUser ? (
             <>
               {' '}
-              (<a href={`${questionPreviewUrl}?variant_id=${issue.variant_id}`}>
+              (<a href={`${questionPreviewUrl}${variantIdQuery}`}>
                 instructor view
               </a>, <a href={studentViewUrl}>student view</a>,{' '}
               <a href={manualGradingUrl}>manual grading</a>,{' '}
@@ -267,7 +271,7 @@ function IssueRow({
             <>
               {' '}
               (
-              <a href={`${questionPreviewUrl}?variant_seed=${issue.variant_seed}`}>
+              <a href={`${questionPreviewUrl}${variantSeedQuery}`}>
                 instructor view
               </a>
               ){' '}
