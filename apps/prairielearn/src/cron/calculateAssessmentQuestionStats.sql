@@ -11,5 +11,11 @@ WHERE
       assessment_instances AS ai
     WHERE
       (ai.assessment_id = a.id)
-      AND (ai.modified_at > a.stats_last_updated)
+      -- Recalculate when stats have never been computed (stats_last_updated IS NULL),
+      -- not only when an instance is newer than the last computation. `x > NULL` is
+      -- NULL (never true), so without the NULL check these assessments are never picked.
+      AND (
+        a.stats_last_updated IS NULL
+        OR ai.modified_at > a.stats_last_updated
+      )
   );
