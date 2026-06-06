@@ -113,19 +113,16 @@ export function getUniqueNames({
   const numberLongName = getNumberLongName(longNames);
   const number = Math.max(numberShortName, numberLongName);
 
-  if (number === 1 && shortName !== 'New' && longName !== 'New') {
-    // If there are no existing copies, and the shortName/longName aren't the default ones, no number is needed at the end of the names
-    return {
-      shortName,
-      longName,
-    };
-  } else {
-    // If there are existing copies, a number is needed at the end of the names
-    return {
-      shortName: `${shortName}_${number}`,
-      longName: `${longName} (${number})`,
-    };
-  }
+  // Suffix the short name only when the short name itself collides (or is the default 'New').
+  // A unique short name (the TID, used to build file paths) must stay unchanged even when only
+  // the long name collides — previously a unique TID still got a `_n` suffix (issue 14680).
+  // The long name keeps its existing behavior.
+  const shortNameNeedsNumber = numberShortName > 1 || shortName === 'New';
+  const longNameNeedsNumber = number > 1 || shortName === 'New' || longName === 'New';
+  return {
+    shortName: shortNameNeedsNumber ? `${shortName}_${number}` : shortName,
+    longName: longNameNeedsNumber ? `${longName} (${number})` : longName,
+  };
 }
 
 /**
