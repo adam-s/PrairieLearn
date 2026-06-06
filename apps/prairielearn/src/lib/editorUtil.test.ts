@@ -62,7 +62,7 @@ describe('editor utils', () => {
     });
 
     describe('Unique short_name, duplicated long_name without number', () => {
-      it('should append _2 to the short_name and (2) to the long_name', () => {
+      it('should leave the unique short_name unchanged and append (2) only to the long_name', () => {
         const names = getUniqueNames({
           shortNames: ['Fa18', 'Fa19'],
           longNames: ['Fall 2018', 'Fall 2019'],
@@ -70,13 +70,13 @@ describe('editor utils', () => {
           longName: 'Fall 2019',
         });
 
-        assert.equal(names.shortName, 'Fall19_2');
+        assert.equal(names.shortName, 'Fall19');
         assert.equal(names.longName, 'Fall 2019 (2)');
       });
     });
 
     describe('Unique short_name, duplicated long_name with number', () => {
-      it('should increment the number for the long_name and append it to both short_name and long_name', () => {
+      it('should leave the unique short_name unchanged and increment only the long_name', () => {
         const names = getUniqueNames({
           shortNames: ['Fa18', 'Fa19', 'Fall19_2', 'Fall19_3'],
           longNames: ['Fall 2018', 'Fall 2019', 'Fall 2019 (2)', 'Fall 2019 (3)'],
@@ -84,8 +84,24 @@ describe('editor utils', () => {
           longName: 'Fall 2019',
         });
 
-        assert.equal(names.shortName, 'Fall_19_4');
+        assert.equal(names.shortName, 'Fall_19');
         assert.equal(names.longName, 'Fall 2019 (4)');
+      });
+    });
+
+    describe('Unique short_name (TID) with a duplicated long_name (title) — issue 14680', () => {
+      it('keeps the unique short_name and numbers only the long_name', () => {
+        // Creating an assessment whose title duplicates an existing one but whose TID is unique
+        // must NOT add a `_n` suffix to the unique TID.
+        const names = getUniqueNames({
+          shortNames: ['hw1', 'hw2'],
+          longNames: ['Homework 1', 'Homework 2'],
+          shortName: 'hw3',
+          longName: 'Homework 2',
+        });
+
+        assert.equal(names.shortName, 'hw3');
+        assert.equal(names.longName, 'Homework 2 (2)');
       });
     });
 
@@ -201,7 +217,9 @@ describe('editor utils', () => {
           longName: 'Calc I + II',
         });
 
-        assert.equal(names.shortName, 'CalcII_3');
+        // CalcII is unique among the short names, so it stays unchanged (issue 14680);
+        // the regex-escaping of "+" is still exercised by the long name counting to (3).
+        assert.equal(names.shortName, 'CalcII');
         assert.equal(names.longName, 'Calc I + II (3)');
       });
     });
