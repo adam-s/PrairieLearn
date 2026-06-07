@@ -6,7 +6,7 @@ import fetch from 'node-fetch';
 import * as unzipper from 'unzipper';
 import { afterAll, assert, beforeAll, describe, it } from 'vitest';
 
-import { queryRow } from '@prairielearn/postgres';
+import { execute, queryRow } from '@prairielearn/postgres';
 import { generatePrefixCsrfToken } from '@prairielearn/signed-token';
 
 import { getAssessmentTrpcUrl } from '../lib/client/url.js';
@@ -328,6 +328,72 @@ describe('Instructor Assessment Downloads', { timeout: 60_000 }, function () {
       assert.equal(data[0]['Max points'], 5);
       assert.equal(data[0]['Question % score'], 100);
     });
+  });
+
+  // Regression for https://github.com/PrairieLearn/PrairieLearn/issues/4982:
+  // uploaded file contents live under submitted_answer._files. They must NOT be
+  // dumped into the submissions CSVs (they bloat the cell and break CSV parsing
+  // for Excel / `cut`), but they MUST remain available via the *_files.zip
+  // archives. This mirrors the existing fix for submissions_for_manual_grading
+  // (issue #2409).
+  describe('12b. File-upload data is stripped from submission CSVs but kept in ZIPs', function () {
+    const SENTINEL = 'SENTINEL_FILE_CONTENTS_4982';
+    const SENTINEL_B64 = Buffer.from(SENTINEL).toString('base64');
+    const FILE_NAME = 'answer.pdf';
+
+    // Resolve a download link's absolute URL from the downloads page (the
+    // filenames are prefixed with the assessment label, e.g. "Exam 1_…").
+    function downloadHref(suffix: string): string {
+      const el = locals.$(`a:contains('${suffix}')`);
+      assert.lengthOf(el, 1, `expected exactly one '${suffix}' download link`);
+      return locals.siteUrl + el[0].attribs.href;
+    }
+
+    it('should inject a _files payload into the existing submission', async () => {
+      // Attach a fake uploaded file to every submission for this assessment's
+      // instances, simulating a file-upload (pl-file-upload) question answer.
+      const rowCount = await execute(
+        `UPDATE submissions AS s
+         SET submitted_answer = COALESCE(s.submitted_answer, '{}'::jsonb)
+           || jsonb_build_object('_files', $files::jsonb)
+         FROM variants AS v
+           JOIN instance_questions AS iq ON (iq.id = v.instance_question_id)
+           JOIN assessment_instances AS ai ON (ai.id = iq.assessment_instance_id)
+         WHERE s.variant_id = v.id AND ai.assessment_id = $assessment_id`,
+        {
+          assessment_id: locals.assessment_id,
+          files: JSON.stringify([{ name: FILE_NAME, contents: SENTINEL_B64 }]),
+        },
+      );
+      assert.isAtLeast(rowCount, 1, 'expected at least one submission to update');
+    });
+
+    for (const suffix of ['all_submissions.csv', 'final_submissions.csv', 'best_submissions.csv']) {
+      it(`${suffix} should NOT contain the uploaded file contents`, async () => {
+        const res = await fetch(downloadHref(suffix));
+        assert.equal(res.status, 200);
+        const text = await res.text();
+        // The raw _files blob (key and base64 contents) must be absent.
+        assert.notInclude(text, '_files', `${suffix} leaked the _files key`);
+        assert.notInclude(text, SENTINEL_B64, `${suffix} leaked the uploaded file contents`);
+        // The CSV is still well-formed and still has the row.
+        const data = csvParse<any>(text, { columns: true, cast: true });
+        assert.isAtLeast(data.length, 1);
+        assert.equal(data[0]['UID'], 'dev@example.com');
+      });
+    }
+
+    for (const suffix of ['all_files.zip', 'final_files.zip', 'best_files.zip']) {
+      it(`${suffix} should STILL contain the uploaded file`, async () => {
+        const res = await fetch(downloadHref(suffix));
+        assert.equal(res.status, 200);
+        const zip = await unzipper.Open.buffer(Buffer.from(await res.arrayBuffer()));
+        const entry = zip.files.find((f) => f.path.endsWith(FILE_NAME));
+        assert.isDefined(entry, `${suffix} is missing the uploaded file`);
+        const contents = (await entry!.buffer()).toString();
+        assert.equal(contents, SENTINEL, `${suffix} has wrong file contents`);
+      });
+    }
   });
 
   describe('13. Enroll a student and have them start the exam', function () {
