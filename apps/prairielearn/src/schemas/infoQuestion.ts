@@ -106,7 +106,12 @@ const WorkspaceOptionsJsonSchema = z
       .describe(
         'The Docker image that will be used to serve this question. Should be specified as Dockerhub image.',
       ),
-    port: z.number().int().describe('The port number used in the Docker image.'),
+    port: z
+      .number()
+      .int()
+      .min(0)
+      .max(65_535)
+      .describe('The port number used in the Docker image.'),
     home: z.string().describe('The home directory of the workspace container.'),
     args: z
       .union([z.string(), z.array(z.string())])
@@ -191,6 +196,8 @@ const ExternalGradingOptionsJsonSchema = z
     timeout: z
       .number()
       .int()
+      .min(1)
+      .max(86_400)
       .describe('The number of seconds after which the grading job will timeout.')
       .optional(),
     enableNetworking: z

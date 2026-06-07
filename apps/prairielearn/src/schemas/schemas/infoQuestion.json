@@ -164,8 +164,8 @@
         },
         "timeout": {
           "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991,
+          "minimum": 1,
+          "maximum": 86400,
           "description": "The number of seconds after which the grading job will timeout."
         },
         "enableNetworking": {
@@ -286,8 +286,8 @@
         },
         "port": {
           "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991,
+          "minimum": 0,
+          "maximum": 65535,
           "description": "The port number used in the Docker image."
         },
         "home": {
