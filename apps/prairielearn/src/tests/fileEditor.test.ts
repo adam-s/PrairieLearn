@@ -474,6 +474,16 @@ function verifyEdit(
     const fileContents = b64DecodeUnicode(editor.data('contents'));
     assert.strictEqual(fileContents, expectedDraftContents);
   });
+  // Regression guard for the data-loss class of bug (issue #6153): the save button
+  // must be rendered `disabled` so a not-yet-initialized editor (e.g. a slow load on
+  // a very large file) cannot submit an empty `file_edit_contents` and overwrite the
+  // file with nothing. The client only enables it after a real change is registered,
+  // by which point the hidden input already holds the full file.
+  it('save button should be disabled on initial render (empty-save guard)', function () {
+    const saveButton = locals.$('#file-editor-save-button');
+    assert.lengthOf(saveButton, 1);
+    assert.property(saveButton[0].attribs, 'disabled');
+  });
   it(`should have save results - ${expectedToFindResults}`, function () {
     elemList = locals.$('form[name="editor-form"] #job-sequence-results');
     if (expectedToFindResults) {
