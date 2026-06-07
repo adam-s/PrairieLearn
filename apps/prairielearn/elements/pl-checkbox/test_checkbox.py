@@ -5,6 +5,8 @@ has backwards compatibility with the original element.
 
 import importlib
 import math
+import os
+from collections.abc import Iterator
 from typing import Any, NamedTuple
 
 import lxml.html
@@ -14,6 +16,21 @@ pl_checkbox = importlib.import_module("pl-checkbox")
 
 DisplayType = pl_checkbox.DisplayType
 OrderType = pl_checkbox.OrderType
+
+# Directory holding this element's mustache template; render() opens it by a
+# relative path, so tests that call render() must run with this as the cwd
+# (the zygote chdirs into the element directory before rendering).
+_ELEMENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+@pytest.fixture
+def in_element_dir() -> Iterator[None]:
+    prev = os.getcwd()
+    os.chdir(_ELEMENT_DIR)
+    try:
+        yield
+    finally:
+        os.chdir(prev)
 
 
 def create_test_data(
@@ -775,3 +792,119 @@ def test_max_correct_respected_without_number_answers() -> None:
         assert num_correct >= 2, (
             f"min-correct=2 was specified but only {num_correct} correct answers were shown."
         )
+
+
+def _render_question_html(element_html: str) -> str:
+    """Run prepare() + render(panel="question") and return the rendered HTML.
+
+    Exercises the real help-text branch in render() (not just generate_insert_text),
+    which is where the visible "Select ..." string is composed.
+    """
+    data: dict[str, Any] = {
+        "params": {},
+        "correct_answers": {},
+        "submitted_answers": {},
+        "format_errors": {},
+        "partial_scores": {},
+        "score": 0,
+        "feedback": {},
+        "variant_seed": "1",
+        "options": {},
+        "raw_submitted_answers": {},
+        "editable": True,
+        "panel": "question",
+        "extensions": {},
+        "num_valid_submissions": 0,
+        "manual_points": 0,
+        "auto_points": 0,
+        "answers_names": {},
+    }
+    pl_checkbox.prepare(element_html, data)
+    return pl_checkbox.render(element_html, data)
+
+
+_FIVE_ANSWERS = """
+    <pl-answer correct="true">A</pl-answer>
+    <pl-answer correct="true">B</pl-answer>
+    <pl-answer correct="true">C</pl-answer>
+    <pl-answer>D</pl-answer>
+    <pl-answer>E</pl-answer>
+"""
+
+
+def test_default_help_text_states_minimum(in_element_dir: None) -> None:
+    """Regression for https://github.com/PrairieLearn/PrairieLearn/issues/2590.
+
+    A default pl-checkbox (no min/max-select, no detailed-help-text) used to render
+    "Select all possible options that apply.", implying an empty submission is fine.
+    But parse() always enforces a minimum of one selected option. The visible help
+    text must state that minimum so it matches the enforced rule.
+    """
+    html = _render_question_html(
+        f'<pl-checkbox answers-name="ans">{_FIVE_ANSWERS}</pl-checkbox>'
+    )
+    # The misleading bare phrasing must be gone...
+    assert "all possible options that apply" not in html
+    # ...and the help text must communicate the enforced minimum, in the same words
+    # parse() uses for its format error.
+    assert "You must select at least one option." in html
+
+
+def test_default_help_text_with_show_number_correct(in_element_dir: None) -> None:
+    """The minimum-selection sentence composes with show-number-correct."""
+    html = _render_question_html(
+        f'<pl-checkbox answers-name="ans" show-number-correct="true">{_FIVE_ANSWERS}</pl-checkbox>'
+    )
+    assert "You must select at least one option." in html
+    assert "correct options in the list above." in html
+
+
+class ConstrainedHelpTextCase(NamedTuple):
+    attribs: str
+    expected_fragment: str
+    id: str
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        # min-select only -> "at least N"
+        ConstrainedHelpTextCase(
+            attribs='min-select="2"',
+            expected_fragment="at least <b>2</b> options.",
+            id="min_select_only",
+        ),
+        # max-select only -> "at most N"
+        ConstrainedHelpTextCase(
+            attribs='max-select="3"',
+            expected_fragment="at most <b>3</b> options.",
+            id="max_select_only",
+        ),
+        # both -> "between N and M"
+        ConstrainedHelpTextCase(
+            attribs='min-select="2" max-select="4"',
+            expected_fragment="between <b>2</b> and <b>4</b> options.",
+            id="min_and_max",
+        ),
+        # min == max -> "exactly N"
+        ConstrainedHelpTextCase(
+            attribs='min-select="3" max-select="3"',
+            expected_fragment="exactly <b>3</b> options.",
+            id="min_eq_max",
+        ),
+    ],
+    ids=lambda case: case.id,
+)
+def test_constrained_help_text_unchanged(
+    case: ConstrainedHelpTextCase, in_element_dir: None
+) -> None:
+    """The 2590 fix touches only the default branch; constrained help text (which was
+    already accurate) must keep its exact wording and must NOT gain the extra sentence.
+    """
+    html = _render_question_html(
+        f'<pl-checkbox answers-name="ans" {case.attribs}>{_FIVE_ANSWERS}</pl-checkbox>'
+    )
+    assert case.expected_fragment in html
+    # The constrained branches already imply a minimum; they must not pick up the
+    # default-branch sentence.
+    assert "You must select at least one option." not in html
