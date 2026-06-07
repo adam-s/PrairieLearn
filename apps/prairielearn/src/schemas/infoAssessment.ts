@@ -6,18 +6,6 @@ import { CommentJsonSchema } from './comment.js';
 export const EnumAssessmentToolSchema = z.enum(['calculator']);
 export type EnumAssessmentTool = z.infer<typeof EnumAssessmentToolSchema>;
 
-function uniqueArray<T extends z.ZodType>(schema: T) {
-  // Zod cannot express `uniqueItems` directly, and the `.refine()` uniqueness
-  // check is unrepresentable in JSON Schema, so advertise it via metadata that
-  // `z.toJSONSchema` copies through verbatim.
-  return z
-    .array(schema)
-    .refine((items) => new Set(items).size === items.length, {
-      message: 'All items must be unique, no duplicate values allowed',
-    })
-    .meta({ uniqueItems: true });
-}
-
 // TODO: This schema is being deprecated
 // https://github.com/PrairieLearn/PrairieLearn/issues/13545
 export const LegacyGroupRoleJsonSchema = z
@@ -88,15 +76,18 @@ const GroupsStudentPermissionsJsonSchema = z
 
 const GroupsRolePermissionsJsonSchema = z
   .object({
-    canAssignRoles: uniqueArray(z.string())
+    canAssignRoles: z
+      .array(z.string())
       .describe('Role names that can assign other users to roles.')
       .optional()
       .default([]),
-    canView: uniqueArray(z.string())
+    canView: z
+      .array(z.string())
       .describe('Role names that can view questions.')
       .optional()
       .default([]),
-    canSubmit: uniqueArray(z.string())
+    canSubmit: z
+      .array(z.string())
       .describe('Role names that can submit questions.')
       .optional()
       .default([]),
@@ -111,7 +102,6 @@ export const GroupsJsonSchema = z
     roles: z
       .array(GroupsRoleJsonSchema)
       .describe('Array of custom user roles in a group.')
-      .meta({ uniqueItems: true })
       .optional()
       .default([]),
     studentPermissions: GroupsStudentPermissionsJsonSchema.prefault({}),
@@ -300,13 +290,15 @@ export const ZoneQuestionBlockJsonSchema = QuestionPointsJsonSchema.extend({
       'Whether to allow real-time grading for this question. If not specified, inherits from the zone level.',
     )
     .optional(),
-  canSubmit: uniqueArray(z.string())
+  canSubmit: z
+    .array(z.string())
     .describe(
       'A list of group role names that can submit the question. Only applicable for group assessments.',
     )
     .optional()
     .default([]),
-  canView: uniqueArray(z.string())
+  canView: z
+    .array(z.string())
     .describe(
       'A list of group role names that can view the question. Only applicable for group assessments.',
     )
@@ -379,13 +371,15 @@ export const ZoneAssessmentJsonSchema = z.object({
       'Whether to allow real-time grading for questions in this zone. If not specified, inherits from the assessment level.',
     )
     .optional(),
-  canSubmit: uniqueArray(z.string())
+  canSubmit: z
+    .array(z.string())
     .describe(
       'A list of group role names that can submit questions in this zone. Only applicable for group assessments.',
     )
     .optional()
     .default([]),
-  canView: uniqueArray(z.string())
+  canView: z
+    .array(z.string())
     .describe(
       'A list of group role names that can view questions in this zone. Only applicable for group assessments.',
     )
@@ -533,14 +527,16 @@ export const AssessmentJsonSchema = z
       .meta({ deprecated: true })
       .optional()
       .default([]),
-    canSubmit: uniqueArray(z.string())
+    canSubmit: z
+      .array(z.string())
       .describe(
         'A list of group role names that can submit questions. Only applicable for group assessments. Prefer using the "groups" property instead.',
       )
       .meta({ deprecated: true })
       .optional()
       .default([]),
-    canView: uniqueArray(z.string())
+    canView: z
+      .array(z.string())
       .describe(
         'A list of group role names that can view questions. Only applicable for group assessments. Prefer using the "groups" property instead.',
       )

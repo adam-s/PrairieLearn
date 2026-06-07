@@ -1173,6 +1173,96 @@ describe('Assessment syncing', () => {
     );
   });
 
+  it('accepts a duplicate group role name and dedupes it during sync', async () => {
+    // Characterization test for the "unique values" annotation: the schema no
+    // longer rejects duplicate role names; sync absorbs the duplicate via the
+    // team_roles `ON CONFLICT (role_name, assessment_id) DO UPDATE` upsert,
+    // matching how `tags`/`sharingSets` already dedupe. (Before this change the
+    // AJV `uniqueItems` guard rejected this input with a sync error.)
+    const courseData = util.getCourseData();
+    const groupAssessment = makeAssessment(courseData, 'Homework');
+    groupAssessment.groups = {
+      ...getGroupsConfig(),
+      roles: [
+        { name: 'Recorder', minMembers: 1, maxMembers: 4 },
+        { name: 'Contributor' },
+        // Duplicate of the first role — must be accepted and collapsed.
+        { name: 'Recorder', minMembers: 1, maxMembers: 4 },
+      ],
+    };
+    courseData.courseInstances[util.COURSE_INSTANCE_ID].assessments['groupAssessment'] =
+      groupAssessment;
+    await util.writeAndSyncCourseData(courseData);
+
+    // Sync must succeed (no `uniqueItems` rejection).
+    const syncedAssessment = await findSyncedAssessment('groupAssessment');
+    assert.isNotOk(syncedAssessment.sync_errors);
+
+    // The duplicate role collapses to a single team_roles row.
+    const syncedRoles = await util.dumpTableWithSchema('team_roles', GroupRoleSchema);
+    assert.equal(syncedRoles.length, 2);
+    const recorderRows = syncedRoles.filter((role) => role.role_name === 'Recorder');
+    assert.equal(recorderRows.length, 1, 'duplicate "Recorder" role should be deduped to one row');
+    const recorder = recorderRows[0];
+    assert.equal(recorder.minimum, 1);
+    assert.equal(recorder.maximum, 4);
+    assert.isDefined(syncedRoles.find((role) => role.role_name === 'Contributor'));
+  });
+
+  it('accepts duplicate role names in question-level permissions and dedupes them', async () => {
+    // Companion characterization test for the `canView`/`canSubmit` sink: these
+    // arrays resolve through a `role_name IN (...)` membership test in the sproc,
+    // which is duplicate-insensitive. A duplicate produces exactly one permission
+    // row, identical to the already-unique case.
+    const courseData = util.getCourseData();
+    const groupAssessment = makeAssessment(courseData, 'Homework');
+    groupAssessment.groups = getGroupsConfig();
+    groupAssessment.zones?.push({
+      title: 'test zone',
+      questions: [
+        {
+          id: util.QUESTION_ID,
+          points: 5,
+          // Duplicate role name in canView — must be accepted and deduped.
+          canView: ['Recorder', 'Recorder'],
+          canSubmit: ['Recorder'],
+        },
+      ],
+    });
+    courseData.courseInstances[util.COURSE_INSTANCE_ID].assessments['groupAssessment'] =
+      groupAssessment;
+    await util.writeAndSyncCourseData(courseData);
+
+    // Sync must succeed (no `uniqueItems` rejection).
+    const syncedAssessment = await findSyncedAssessment('groupAssessment');
+    assert.isNotOk(syncedAssessment.sync_errors);
+
+    const syncedData = await getSyncedAssessmentData('groupAssessment');
+    const assessmentQuestion = syncedData.assessment_questions.find(
+      (aq) => aq.question.qid === util.QUESTION_ID,
+    );
+    assert.isDefined(assessmentQuestion);
+
+    const syncedRoles = await util.dumpTableWithSchema('team_roles', GroupRoleSchema);
+    const recorder = syncedRoles.find((role) => role.role_name === 'Recorder');
+    assert.isDefined(recorder);
+
+    const syncedPermissions = await util.dumpTableWithSchema(
+      'assessment_question_role_permissions',
+      AssessmentQuestionRolePermissionSchema,
+    );
+    // Exactly one permission row for (this question, Recorder) — the duplicate
+    // collapses; can_view stays true.
+    const recorderPermissions = syncedPermissions.filter(
+      (p) =>
+        idsEqual(p.assessment_question_id, assessmentQuestion.id) &&
+        idsEqual(p.team_role_id, recorder.id),
+    );
+    assert.equal(recorderPermissions.length, 1, 'duplicate canView role should yield one row');
+    assert.isTrue(recorderPermissions[0].can_view);
+    assert.isTrue(recorderPermissions[0].can_submit);
+  });
+
   it('records an error if a question has permissions for non-existent group roles', async () => {
     const courseData = util.getCourseData();
     const groupAssessment = makeAssessment(courseData, 'Homework');

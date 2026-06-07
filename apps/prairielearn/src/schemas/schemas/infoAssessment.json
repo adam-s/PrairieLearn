@@ -144,7 +144,6 @@
       "items": {
         "type": "string"
       },
-      "uniqueItems": true,
       "description": "A list of group role names that can submit questions. Only applicable for group assessments. Prefer using the \"groups\" property instead.",
       "deprecated": true
     },
@@ -154,7 +153,6 @@
       "items": {
         "type": "string"
       },
-      "uniqueItems": true,
       "description": "A list of group role names that can view questions. Only applicable for group assessments. Prefer using the \"groups\" property instead.",
       "deprecated": true
     },
@@ -199,8 +197,7 @@
           "items": {
             "$ref": "#/definitions/GroupsRoleJsonSchema"
           },
-          "description": "Array of custom user roles in a group.",
-          "uniqueItems": true
+          "description": "Array of custom user roles in a group."
         },
         "studentPermissions": {
           "default": {},
@@ -240,7 +237,6 @@
               "items": {
                 "type": "string"
               },
-              "uniqueItems": true,
               "description": "Role names that can assign other users to roles."
             },
             "canView": {
@@ -249,7 +245,6 @@
               "items": {
                 "type": "string"
               },
-              "uniqueItems": true,
               "description": "Role names that can view questions."
             },
             "canSubmit": {
@@ -258,7 +253,6 @@
               "items": {
                 "type": "string"
               },
-              "uniqueItems": true,
               "description": "Role names that can submit questions."
             }
           },
@@ -758,7 +752,6 @@
           "items": {
             "type": "string"
           },
-          "uniqueItems": true,
           "description": "A list of group role names that can submit questions in this zone. Only applicable for group assessments."
         },
         "canView": {
@@ -767,7 +760,6 @@
           "items": {
             "type": "string"
           },
-          "uniqueItems": true,
           "description": "A list of group role names that can view questions in this zone. Only applicable for group assessments."
         },
         "tools": {
@@ -892,7 +884,6 @@
           "items": {
             "type": "string"
           },
-          "uniqueItems": true,
           "description": "A list of group role names that can submit the question. Only applicable for group assessments."
         },
         "canView": {
@@ -901,7 +892,6 @@
           "items": {
             "type": "string"
           },
-          "uniqueItems": true,
           "description": "A list of group role names that can view the question. Only applicable for group assessments."
         },
         "preferences": {
