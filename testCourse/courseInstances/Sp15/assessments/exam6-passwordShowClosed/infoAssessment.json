@@ -1,0 +1,22 @@
+{
+  "uuid": "b385b606-7907-4a9c-ac53-85dba345e3bd",
+  "type": "Exam",
+  "title": "Password-protected exam that hides closed assessments",
+  "set": "Exam",
+  "number": "991",
+  "allowAccess": [
+    {
+      "credit": 100,
+      "timeLimitMin": 50,
+      "password": "diamond",
+      "showClosedAssessment": false,
+      "showClosedAssessmentScore": false
+    }
+  ],
+  "zones": [
+    {
+      "title": "Hard questions",
+      "questions": [{ "id": "addNumbers", "autoPoints": 5 }]
+    }
+  ]
+}
