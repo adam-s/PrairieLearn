@@ -57,6 +57,7 @@ SELECT
   s.mode,
   s.override_score,
   s.score,
+  s.user_id,
   s.v2_score,
   s.variant_id,
   s.manual_rubric_grading_id,

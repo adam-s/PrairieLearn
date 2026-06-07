@@ -1609,6 +1609,7 @@ export const SubmissionSchema = z.object({
   score: z.number().nullable(),
   submitted_answer: z.record(z.string(), z.any()).nullable(),
   true_answer: z.record(z.string(), z.any()).nullable(),
+  user_id: IdSchema.nullable(),
   v2_score: z.number().nullable(),
   variant_id: IdSchema,
 });

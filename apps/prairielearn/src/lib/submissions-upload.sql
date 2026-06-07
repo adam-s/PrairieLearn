@@ -77,6 +77,7 @@ RETURNING
 INSERT INTO
   submissions (
     variant_id,
+    user_id,
     auth_user_id,
     submitted_answer,
     raw_submitted_answer,
@@ -87,6 +88,7 @@ INSERT INTO
 VALUES
   (
     $variant_id,
+    $user_id,
     $authn_user_id,
     $submitted_answer,
     '{}'::jsonb, -- We don't have any useful value for `raw_submitted_answer` here.
