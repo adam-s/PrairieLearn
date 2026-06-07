@@ -230,8 +230,10 @@ const setAssignedGraderMutation = t.procedure
     await updateInstanceQuestions({
       assessment_question: opts.ctx.assessment_question,
       instance_question_ids: opts.input.instance_question_ids,
-      update_requires_manual_grading: false,
-      requires_manual_grading: null,
+      // Assigning a submission to a grader means it needs grading, so mark it as requiring manual
+      // grading (mirrors the instance-question page). Unassigning leaves the flag untouched.
+      update_requires_manual_grading: assigned_grader !== null,
+      requires_manual_grading: assigned_grader !== null ? true : null,
       update_assigned_grader: true,
       assigned_grader,
     });

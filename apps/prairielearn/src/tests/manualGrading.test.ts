@@ -1289,5 +1289,66 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
 
       checkGradingResults(mockStaff[0], mockStaff[1]);
     });
+
+    // Regression for https://github.com/PrairieLearn/PrairieLearn/issues/14528 :
+    // On the assessment-question table, assigning an *already-graded* submission to a grader must
+    // re-mark it as requiring manual grading, so it shows up in the grading queue/counts for the
+    // assigned grader. This mirrors the instance-question page, where re-assigning to a grader sets
+    // requires_manual_grading = true. Placed last so its state changes don't affect other tests.
+    describe('Assigning a grader to an already-graded submission (issue 14528)', () => {
+      test.sequential('precondition: the submission is graded (not requiring grading)', async () => {
+        const instanceQuestion = await sqldb.queryRow(
+          sql.get_instance_question,
+          { iqId },
+          InstanceQuestionSchema,
+        );
+        // Graded by the preceding "submit a new grade" step.
+        assert.equal(instanceQuestion.requires_manual_grading, false);
+      });
+
+      test.sequential('assigning the graded submission to a grader re-requires grading', async () => {
+        setUser(defaultUser);
+        const client = await createTrpcClient(manualGradingAssessmentQuestionUrl);
+        await client.manualGrading.setAssignedGrader.mutate({
+          assigned_grader: mockStaff[1].id!,
+          instance_question_ids: [iqId.toString()],
+        });
+
+        const instanceQuestion = await sqldb.queryRow(
+          sql.get_instance_question,
+          { iqId },
+          InstanceQuestionSchema,
+        );
+        assert.equal(instanceQuestion.requires_manual_grading, true);
+        assert.equal(instanceQuestion.assigned_grader, mockStaff[1].id);
+      });
+
+      test.sequential('the re-required submission is counted on the manual grading page', async () => {
+        setUser(defaultUser);
+        const instanceList = await loadInstances(manualGradingAssessmentQuestionUrl);
+        assert.lengthOf(instanceList, 1);
+        assert.equal(instanceList[0].instance_question.id, iqId);
+        assert.isOk(instanceList[0].instance_question.requires_manual_grading);
+        assert.equal(instanceList[0].instance_question.assigned_grader, mockStaff[1].id);
+      });
+
+      test.sequential('removing the grader assignment leaves the flag unchanged', async () => {
+        setUser(defaultUser);
+        const client = await createTrpcClient(manualGradingAssessmentQuestionUrl);
+        await client.manualGrading.setAssignedGrader.mutate({
+          assigned_grader: null,
+          instance_question_ids: [iqId.toString()],
+        });
+        const instanceQuestion = await sqldb.queryRow(
+          sql.get_instance_question,
+          { iqId },
+          InstanceQuestionSchema,
+        );
+        // Unassigning clears the grader but must NOT alter requires_manual_grading; the dedicated
+        // "Tag as graded"/"Tag as required grading" actions own that flag.
+        assert.equal(instanceQuestion.requires_manual_grading, true);
+        assert.isNotOk(instanceQuestion.assigned_grader);
+      });
+    });
   });
 });
