@@ -392,10 +392,79 @@ async function execPythonServer(
   }
 }
 
+/**
+ * Top-level `data` keys whose sub-values are *expected* to be absent in normal
+ * operation, so interpolating a missing member of one of them is idiomatic, not
+ * an authoring error. These hold per-answer submission/grading state that simply
+ * does not exist before a student submits (e.g. `{{submitted_answers.c}}`,
+ * `{{format_errors.c}}`, `{{feedback.c}}`), and questions routinely interpolate
+ * them directly. References into these are NOT reported as missing variables.
+ */
+const OPTIONAL_DATA_CONTAINERS = new Set([
+  'submitted_answers',
+  'raw_submitted_answers',
+  'format_errors',
+  'feedback',
+  'partial_scores',
+  'correct_answers',
+]);
+
+function isOptionalDataReference(name: string): boolean {
+  // `name` is a Mustache key path like `submitted_answers.c`. Treat any member
+  // of an optional container (and the container itself) as expected-optional.
+  return OPTIONAL_DATA_CONTAINERS.has(name.split('.')[0]);
+}
+
+/**
+ * A Mustache `Writer` that records the names of interpolation tags (`{{name}}`,
+ * `{{{name}}}`, `{{&name}}`) whose value resolves to `null`/`undefined`.
+ *
+ * By default Mustache renders a reference to a missing variable as an empty
+ * string, silently producing a malformed question (issue #8859). We only hook
+ * the interpolation paths (`escapedValue`/`unescapedValue`); section tags
+ * (`{{#x}}` / `{{^x}}`) are intentionally left alone, because using a missing
+ * key as a falsy conditional is an established and valid Mustache idiom. We also
+ * skip the optional submission/grading containers (see
+ * `OPTIONAL_DATA_CONTAINERS`), whose members are legitimately absent pre-submit.
+ */
+class MissingTrackingMustacheWriter extends mustache.Writer {
+  missing = new Set<string>();
+
+  private track(token: string[], context: mustache.Context) {
+    const name = token[1];
+    if (!isOptionalDataReference(name) && context.lookup(name) == null) {
+      this.missing.add(name);
+    }
+  }
+
+  escapedValue(token: string[], context: mustache.Context, config?: any): string {
+    this.track(token, context);
+    return super.escapedValue(token, context, config);
+  }
+
+  unescapedValue(token: string[], context: mustache.Context): string {
+    this.track(token, context);
+    return super.unescapedValue(token, context);
+  }
+}
+
+/**
+ * Render `question.html` with Mustache, additionally reporting any interpolation
+ * tags that referenced a missing variable so the caller can record a course
+ * issue instead of silently showing students a malformed variant (issue #8859).
+ *
+ * Exported for unit testing of the missing-variable detection.
+ */
+export function renderQuestionTemplate(rawFile: string, data: Record<string, any>) {
+  const writer = new MissingTrackingMustacheWriter();
+  const html = writer.render(rawFile, data, {});
+  return { html, missingVariables: [...writer.missing] };
+}
+
 async function execTemplate(htmlFilename: string, data: ExecutionData) {
   const rawFile = await fs.readFile(htmlFilename, { encoding: 'utf8' });
-  const html = mustache.render(rawFile, data);
-  return markdown.processQuestion(html);
+  const { html, missingVariables } = renderQuestionTemplate(rawFile, data);
+  return { html: markdown.processQuestion(html), missingVariables };
 }
 
 function checkData(data: Record<string, any>, origData: Record<string, any>, phase: Phase) {
@@ -593,8 +662,9 @@ async function processQuestionHtml<T extends ExecutionData>(
 
   const htmlFilename = path.join(context.question_dir_host, 'question.html');
   let html: string;
+  let missingVariables: string[];
   try {
-    html = await execTemplate(htmlFilename, data);
+    ({ html, missingVariables } = await execTemplate(htmlFilename, data));
   } catch (err: any) {
     return {
       courseIssues: [new CourseIssueError(`${htmlFilename}: ${err.toString()}`, { fatal: true })],
@@ -612,6 +682,23 @@ async function processQuestionHtml<T extends ExecutionData>(
     fileData,
     renderedElementNames,
   } = await processQuestionPhase(phase, codeCaller, data, context, html);
+
+  // A Mustache interpolation tag that references a missing variable is silently
+  // rendered as an empty string, which produces a malformed question without any
+  // signal to the author (issue #8859). Record a (non-fatal) course issue listing
+  // the offending variables so the error is logged and surfaced to instructors
+  // instead of silently shown to students. We only check during `render` to avoid
+  // emitting the same issue once per phase for the same template.
+  if (phase === 'render' && missingVariables.length > 0) {
+    courseIssues.push(
+      new CourseIssueError(
+        `${htmlFilename}: question.html references variable(s) that do not exist in "data": ${missingVariables
+          .map((name) => `"${name}"`)
+          .join(', ')}. Mustache rendered them as empty strings.`,
+        { fatal: false },
+      ),
+    );
+  }
 
   if (phase === 'grade' || phase === 'test') {
     if (context.question.partial_credit) {
