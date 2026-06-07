@@ -67,17 +67,46 @@ WHERE
   $insert_log;
 
 -- BLOCK compute_assessment_instance_points_by_zone
+-- When $exclude_no_credit_questions is true (the regrade/recompute paths, which
+-- resolve credit per instance rather than from a single submission), a question
+-- whose own submitted work counts under no credit (per-question max(s.credit) is
+-- 0 or NULL) contributes 0 to the instance points -- so a no-credit question is
+-- not folded into the instance total just because a *different* question was
+-- answered for credit (issue #958, multi-question case). max_points is never
+-- gated (the maximum possible is independent of credit), and the submission path
+-- passes $exclude_no_credit_questions = false so its behavior is unchanged.
 WITH
+  question_credit AS (
+    SELECT
+      v.instance_question_id AS iq_id,
+      max(s.credit) AS max_credit
+    FROM
+      submissions AS s
+      JOIN variants AS v ON (v.id = s.variant_id)
+      JOIN instance_questions AS iq ON (iq.id = v.instance_question_id)
+    WHERE
+      iq.assessment_instance_id = $assessment_instance_id
+    GROUP BY
+      v.instance_question_id
+  ),
   all_questions AS (
     SELECT
       iq.id AS iq_id,
       z.id AS zone_id,
-      iq.points,
+      CASE
+        WHEN $exclude_no_credit_questions
+        AND coalesce(qc.max_credit, 0) = 0 THEN 0
+        ELSE iq.points
+      END AS points,
       row_number() OVER (
         PARTITION BY
           z.id
         ORDER BY
-          iq.points DESC
+          CASE
+            WHEN $exclude_no_credit_questions
+            AND coalesce(qc.max_credit, 0) = 0 THEN 0
+            ELSE iq.points
+          END DESC
       ) AS points_rank,
       aq.max_points,
       row_number() OVER (
@@ -94,6 +123,7 @@ WITH
       JOIN alternative_groups AS ag ON (ag.id = aq.alternative_group_id)
       JOIN zones AS z ON (z.id = ag.zone_id)
       JOIN assessments AS a ON (a.id = aq.assessment_id)
+      LEFT JOIN question_credit AS qc ON (qc.iq_id = iq.id)
     WHERE
       iq.assessment_instance_id = $assessment_instance_id
       -- drop deleted questions unless assessment type is Exam

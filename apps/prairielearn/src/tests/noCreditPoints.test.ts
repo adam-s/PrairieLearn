@@ -48,6 +48,16 @@ describe('No-credit access rule must not change assessment instance points (issu
     });
     context.hwId = hwId;
     context.hwUrl = `${context.courseInstanceBaseUrl}/assessment/${hwId}/`;
+
+    // A second assessment with TWO questions in one zone, used to exercise the
+    // multi-question regrade boundary (#137-A follow-up): different questions
+    // answered under different credits.
+    const { id: hwMultiId } = await selectAssessmentByTid({
+      course_instance_id: '1',
+      tid: 'hw22-noCreditMultiQuestion',
+    });
+    context.hwMultiId = hwMultiId;
+    context.hwMultiUrl = `${context.courseInstanceBaseUrl}/assessment/${hwMultiId}/`;
   }, 120_000);
 
   afterAll(helperServer.after, 120_000);
@@ -124,6 +134,53 @@ describe('No-credit access rule must not change assessment instance points (issu
         points: z.number().nullable(),
         score_perc: z.number().nullable(),
       }),
+    );
+  }
+
+  // Grade the question reachable from `pageUrl` whose visible link text contains
+  // `questionLinkText`, submitting the requested percentage score. Returns the
+  // assessment instance id parsed from the assessment-overview URL.
+  async function gradeQuestionFromPage(
+    pageUrl: string,
+    questionLinkText: string,
+    headers: Record<string, string>,
+    scorePercent: number,
+  ): Promise<number> {
+    const pageResponse = await helperClient.fetchCheerio(pageUrl, { headers });
+    assert.isTrue(pageResponse.ok);
+    const instanceUrl = pageResponse.url;
+    assert.include(instanceUrl, '/assessment_instance/');
+
+    const questionPath = pageResponse.$(`a:contains(${questionLinkText})`).attr('href');
+    assert.isString(questionPath, `question link "${questionLinkText}" should be present`);
+    const questionUrl = `${context.siteUrl}${questionPath}`;
+
+    const questionResponse = await helperClient.fetchCheerio(questionUrl, { headers });
+    assert.isTrue(questionResponse.ok);
+    const csrf = helperClient.getCSRFToken(questionResponse.$('.question-form'));
+    const variantId = questionResponse.$('.question-form input[name="__variant_id"]').val() as string;
+    assert.isString(variantId);
+
+    const gradeResponse = await helperClient.fetchCheerio(questionUrl, {
+      method: 'POST',
+      body: new URLSearchParams({
+        __action: 'grade',
+        __csrf_token: csrf,
+        __variant_id: variantId,
+        s: String(scorePercent),
+      }),
+      headers,
+    });
+    assert.isTrue(gradeResponse.ok);
+
+    return helperClient.parseAssessmentInstanceId(instanceUrl);
+  }
+
+  function readQuestionPoints(assessmentInstanceId: number) {
+    return sqldb.queryRows(
+      sql.read_instance_question_points,
+      { assessment_instance_id: assessmentInstanceId },
+      z.object({ points: z.number().nullable() }),
     );
   }
 
@@ -289,6 +346,141 @@ describe('No-credit access rule must not change assessment instance points (issu
         50,
         'regrade must recompute the earned for-credit score (not no-op to the stale 0)',
       );
+    },
+  );
+
+  test.sequential(
+    'multi-question regrade must exclude a no-credit question from the instance total (issue #137-A follow-up)',
+    async () => {
+      // Red-team finding #137-A follow-up. The #137-A fix resolves the omitted
+      // regrade credit from the instance-wide highest submission credit
+      // (max(s.credit)). In a MULTI-question instance where different questions
+      // were answered under different credits, that one instance-wide max
+      // un-gates the WHOLE total -- including a no-credit question's points.
+      //
+      // Scenario (two 10-point questions, instance max 20):
+      //   1. Q1 answered 100% under credit:100  -> Q1.points = 10.
+      //   2. Q2 answered 100% under credit:0     -> Q2.points = 10, but the
+      //      submission path gates the instance total at 10 (correct per #958).
+      //   3. Instructor regrade resolves max(s.credit) = max(100, 0) = 100, so
+      //      the instance-wide gate does NOT fire and the total recomputes to
+      //      min(20, 10 + 10) = 20 -- folding the no-credit Q2's points in.
+      // The regrade must instead count only the questions whose own work was
+      // earned under non-zero credit, leaving the total at 10.
+
+      // Phase 1: answer Q1 (HW22.1) perfectly for credit.
+      const creditHeaders = await actAs('student-multi@example.com', CREDIT_DATE);
+      const aiId = await gradeQuestionFromPage(context.hwMultiUrl, 'HW22.1.', creditHeaders, 100);
+      // Instance total = Q1's 10 points; max_points = 20, so score_perc = 50%
+      // (capped by credit 100, which is a no-op here).
+      assert.equal((await readPoints(aiId))?.points, 10);
+
+      // Phase 2: answer Q2 (HW22.2) perfectly during the no-credit window. The
+      // submission path must not change the recorded instance total (issue #958),
+      // even though Q2 itself records 10 question points (the question-grade path
+      // is credit-blind).
+      const noCreditHeaders = await actAs('student-multi@example.com', NO_CREDIT_DATE);
+      await gradeQuestionFromPage(
+        `${context.courseInstanceBaseUrl}/assessment_instance/${aiId}`,
+        'HW22.2.',
+        noCreditHeaders,
+        100,
+      );
+      assert.equal(
+        (await readPoints(aiId))?.points,
+        10,
+        'no-credit submission on a second question must not change the instance total (#958)',
+      );
+      // Both questions have their own 10 earned points recorded (the question
+      // grade path is credit-blind) -- the credit difference lives only in the
+      // submissions, so the instance-total recompute is the only place to honor it.
+      const iqPoints = await readQuestionPoints(aiId);
+      assert.deepEqual(
+        iqPoints.map((q) => q.points),
+        [10, 10],
+        'both questions record their earned points regardless of credit',
+      );
+
+      // Phase 3: instructor regrade (production path: regradeAllAssessmentInstances
+      // -> regradeSingleAssessmentInstance -> updateAssessmentInstanceGrade with NO
+      // explicit credit -> resolves credit per instance). The buggy instance-wide
+      // max(credit) = 100 un-gates the whole total and folds Q2's no-credit points
+      // in (-> 20). The fix counts only the for-credit question (-> 10).
+      const jobSequenceId = await regradeAllAssessmentInstances(
+        String(context.hwMultiId),
+        '1', // user_id (instructor)
+        '1', // authn_user_id
+      );
+      await helperServer.waitForJobSequenceSuccess(jobSequenceId);
+
+      const afterRegrade = await readPoints(aiId);
+      assert.equal(
+        afterRegrade?.points,
+        10,
+        'regrade must exclude the no-credit question (Q2) from the instance total (10, not 20)',
+      );
+      // score_perc: 10/20 = 50%, capped by the resolved for-credit rule and held
+      // by the no-decrease floor -- unchanged from the for-credit phase.
+      assert.equal(afterRegrade?.score_perc, 50);
+    },
+  );
+
+  test.sequential(
+    'multi-question regrade preserves a for-credit question that has a later no-credit submission (#137-A combined)',
+    async () => {
+      // Combined guard: the single-question #137-A protection (a trailing
+      // no-credit submission must not suppress a for-credit question's regrade)
+      // must keep holding in the multi-question instance, alongside the new
+      // per-question exclusion above. Q1 is earned for credit AND later gets a
+      // no-credit submission; Q2 is answered only under no-credit. After a
+      // regrade, Q1's for-credit points are kept and Q2's no-credit points are
+      // excluded -> total = 10 (Q1 only), never 0 (the #137-A regression) and
+      // never 20 (the multi-question over-credit).
+
+      // Phase 1: Q1 perfect for credit.
+      const creditHeaders = await actAs('student-multi2@example.com', CREDIT_DATE);
+      const aiId = await gradeQuestionFromPage(context.hwMultiUrl, 'HW22.1.', creditHeaders, 100);
+      assert.equal((await readPoints(aiId))?.points, 10);
+
+      // Phase 2: in the no-credit window, make a trailing no-credit submission on
+      // Q1 (0%, so it does not change Q1's earned points) AND answer Q2 at 100%.
+      const noCreditHeaders = await actAs('student-multi2@example.com', NO_CREDIT_DATE);
+      await gradeQuestionFromPage(
+        `${context.courseInstanceBaseUrl}/assessment_instance/${aiId}`,
+        'HW22.1.',
+        noCreditHeaders,
+        0,
+      );
+      await gradeQuestionFromPage(
+        `${context.courseInstanceBaseUrl}/assessment_instance/${aiId}`,
+        'HW22.2.',
+        noCreditHeaders,
+        100,
+      );
+      // The instance total is still Q1's 10 for-credit points.
+      assert.equal((await readPoints(aiId))?.points, 10);
+
+      // Make the recorded instance points stale so the regrade has to recompute.
+      await sqldb.execute(sql.set_assessment_instance_points, {
+        assessment_instance_id: aiId,
+        points: 999,
+        score_perc: 0,
+      });
+
+      const jobSequenceId = await regradeAllAssessmentInstances(
+        String(context.hwMultiId),
+        '1',
+        '1',
+      );
+      await helperServer.waitForJobSequenceSuccess(jobSequenceId);
+
+      const afterRegrade = await readPoints(aiId);
+      assert.equal(
+        afterRegrade?.points,
+        10,
+        'regrade keeps Q1 (for credit) and excludes Q2 (no credit): 10, not 0 and not 20',
+      );
+      assert.equal(afterRegrade?.score_perc, 50);
     },
   );
 });

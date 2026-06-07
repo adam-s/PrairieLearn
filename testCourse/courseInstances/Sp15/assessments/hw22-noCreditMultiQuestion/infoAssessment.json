@@ -1,0 +1,29 @@
+{
+  "uuid": "da81dbba-6733-48a5-b1f7-55156773d55a",
+  "type": "Homework",
+  "title": "Homework to test no-credit points handling across multiple questions",
+  "set": "Homework",
+  "number": "22",
+  "allowAccess": [
+    {
+      "startDate": "2020-01-01T00:00:01",
+      "endDate": "2020-12-31T23:59:59",
+      "credit": 100
+    },
+    {
+      "startDate": "2021-01-01T00:00:01",
+      "endDate": "2030-12-31T23:59:59",
+      "active": true,
+      "credit": 0
+    }
+  ],
+  "zones": [
+    {
+      "title": "Main zone",
+      "questions": [
+        { "id": "partialCredit1", "autoPoints": 10 },
+        { "id": "partialCredit2", "autoPoints": 10 }
+      ]
+    }
+  ]
+}
