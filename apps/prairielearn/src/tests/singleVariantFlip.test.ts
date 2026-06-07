@@ -60,7 +60,7 @@ async function getInstanceQuestionPage(instanceQuestionUrl: string) {
 const VariantRowSchema = z.object({
   id: IdSchema,
   open: z.boolean(),
-  params: z.record(z.any()),
+  params: z.record(z.string(), z.any()),
   broken: z.boolean(),
 });
 
