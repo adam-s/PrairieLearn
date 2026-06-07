@@ -1,0 +1,1 @@
+ALTER TABLE assessment_sets VALIDATE CONSTRAINT assessment_sets_color_length_check;
