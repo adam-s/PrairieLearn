@@ -1290,4 +1290,71 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
       checkGradingResults(mockStaff[0], mockStaff[1]);
     });
   });
+
+  // Regression test for https://github.com/PrairieLearn/PrairieLearn/issues/13163
+  // With "Skip graded submissions" UNCHECKED, clicking "Next" from the submission
+  // with the highest pseudo-random stable order must still advance to another
+  // submission (wrapping around to a lower stable order), not redirect back to the
+  // assessment-question overview page.
+  describe('Next with skip graded submissions unchecked', () => {
+    // The stable order is deterministic in the instance question id; mirror the
+    // formula used by select_next_instance_question so we can pick the submission
+    // that previously dead-ended ("Next" -> overview).
+    const stableOrder = (id: number): number => ((id % 21317) * 45989) % 3767;
+
+    const iqIds: number[] = [];
+
+    test.sequential('create several submissions requiring manual grading', async () => {
+      for (const student of [mockStudents[0], mockStudents[1], mockStudents[2]]) {
+        const studentIqUrl = await loadHomeworkQuestionUrl(student);
+        await saveOrGrade(studentIqUrl, {}, 'save', [
+          { name: 'fib.py', contents: Buffer.from('solution').toString('base64') },
+        ]);
+        iqIds.push(parseInstanceQuestionId(studentIqUrl));
+      }
+      assert.isAtLeast(iqIds.length, 2);
+    });
+
+    test.sequential(
+      'Next from the highest-stable-order submission advances rather than redirecting to overview',
+      async () => {
+        setUser(mockStaff[0]);
+
+        // The previously-buggy case: prior submission has the maximum stable order,
+        // so no candidate has a strictly greater order.
+        const priorIqId = iqIds.reduce((a, b) => (stableOrder(b) > stableOrder(a) ? b : a));
+        const priorIqUrl = `${manualGradingAssessmentUrl}/instance_question/${priorIqId}`;
+
+        const page = await (await fetch(priorIqUrl)).text();
+        const $page = cheerio.load(page);
+        const form = $page('form[name=manual-grading-form]');
+
+        const params = new URLSearchParams({
+          __action: 'next_instance_question',
+          __csrf_token: form.find('input[name=__csrf_token]').attr('value') || '',
+          submission_id: form.find('input[name=submission_id]').attr('value') || '',
+          modified_at: form.find('input[name=modified_at]').attr('value') || '',
+          // Unchecked checkbox: the browser omits the value, the route parses it as false.
+          skip_graded_submissions: 'false',
+          show_submissions_assigned_to_me_only: 'false',
+        });
+
+        const res = await fetch(priorIqUrl, {
+          method: 'POST',
+          headers: { 'Content-type': 'application/x-www-form-urlencoded' },
+          body: params,
+          redirect: 'manual',
+        });
+
+        assert.equal(res.status, 302);
+        const location = res.headers.get('location');
+        assert(location);
+        // Must advance to some instance question, not bounce back to the overview.
+        assert.match(location, /\/manual_grading\/instance_question\/\d+$/);
+        const nextIqId = parseInstanceQuestionId(location);
+        assert.notEqual(nextIqId, priorIqId);
+        assert.include(iqIds, nextIqId);
+      },
+    );
+  });
 });

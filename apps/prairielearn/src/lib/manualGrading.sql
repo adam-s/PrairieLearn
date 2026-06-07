@@ -87,16 +87,6 @@ SELECT
   id
 FROM
   instance_questions_to_grade
-WHERE
-  (
-    -- If skipping graded submissions, the next submission does not necessarily need a higher stable order,
-    -- since the next ungraded submission might have a lower stable order.
-    -- Otherwise, the next submission must have a higher stable order. This prevents users from being redirected
-    -- to the same submission twice.
-    $skip_graded_submissions
-    OR prior_iq_stable_order IS NULL
-    OR iq_stable_order > prior_iq_stable_order
-  )
 ORDER BY
   -- If show_submissions_assigned_to_me_only is true, choose an instance question assigned to current user if one exists, unassigned if not.
   -- Otherwise, select an instance question without using the grader assignment.
@@ -106,9 +96,13 @@ ORDER BY
     WHEN assigned_grader IS NULL THEN 2
     ELSE 3
   END ASC,
-  -- Choose question that list after the prior if one exists. Follow the same
-  -- default pseudo-random deterministic stable order used in the instance
-  -- questions page.
+  -- Prefer the next submission that lists after the prior one in the default
+  -- pseudo-random deterministic stable order (the same order used on the
+  -- instance questions page). When the prior submission is the last in that
+  -- order (or there is none), this wraps around to the lowest stable order so
+  -- the grader can still reach every remaining submission. The prior submission
+  -- itself is excluded above, so a single click never returns to it (unless it
+  -- is the only candidate, in which case no next exists).
   iq_stable_order > prior_iq_stable_order DESC,
   iq_stable_order ASC,
   id ASC
