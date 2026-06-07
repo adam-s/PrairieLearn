@@ -151,7 +151,12 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         init = None
         if initial_child is not None:
             init, n_id = render_drawing_items(initial_child, n_id)
-        ans, n_id = render_drawing_items(answer_child, n_id)
+        # The drawn error box on the correct answer should reflect the SAME tolerance
+        # used to grade (the parent drawing's effective tol), not each sub-element's
+        # independent default. Pass the parent grid-size/tol down so the box matches grading.
+        grid_size = pl.get_integer_attrib(element, "grid-size", defaults.element_defaults["grid-size"])
+        answer_tol = pl.get_float_attrib(element, "tol", defaults.default_tol(grid_size))
+        ans, n_id = render_drawing_items(answer_child, n_id, parent_tol=answer_tol)
 
         # Makes sure that all objects in pl-drawing-answer are graded
         # and all the objects in pl-drawing-initial are not graded
@@ -231,7 +236,7 @@ def render_controls(template: str, elem: lxml.html.HtmlElement) -> str:
         return "unknown tag " + elem.tag
 
 
-def render_drawing_items(elem, curid=0, defaults=None):
+def render_drawing_items(elem, curid=0, defaults=None, parent_tol=None):
     # Convert a set of drawing items defined as html elements into an array of
     # objects that can be sent to mechanicsObjects.js
     # Some helpers to get attributes from elements.  If there is no default argument passed in,
@@ -245,11 +250,18 @@ def render_drawing_items(elem, curid=0, defaults=None):
         if el.tag == "pl-drawing-group":
             if pl.get_boolean_attrib(el, "visible", True):
                 curid += 1
-                raw, _ = render_drawing_items(el, curid, {"groupid": curid})
+                raw, _ = render_drawing_items(el, curid, {"groupid": curid}, parent_tol)
                 objs = raw
                 curid += len(objs)
                 objects.extend(objs)
         else:
+            # Seed the error-box tolerance from the parent drawing so the drawn error
+            # box reflects the SAME tolerance used to grade. Each element sizes its box
+            # as 2*tol, defaulting tol to (its own) grid-size/2 — independent of the
+            # parent — so without this the box could show a tolerance that doesn't
+            # match how the submission is graded. An element that sets its own tol wins.
+            if parent_tol is not None and "tol" not in el.attrib:
+                el.set("tol", str(parent_tol))
             obj = elements.generate(el, el.tag, defaults)
             if obj is not None:
                 obj["id"] = curid
@@ -301,7 +313,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     grid_size = pl.get_integer_attrib(
         element, "grid-size", defaults.element_defaults["grid-size"]
     )
-    tol = pl.get_float_attrib(element, "tol", grid_size / 2)
+    tol = pl.get_float_attrib(element, "tol", defaults.default_tol(grid_size))
     angle_tol = pl.get_float_attrib(
         element, "angle-tol", defaults.element_defaults["angle-tol"]
     )
@@ -330,7 +342,17 @@ def render(element_html: str, data: pl.QuestionData) -> str:
 
     show_btn = data["panel"] == "question" and not preview_mode
 
-    if math.isclose(tol, grid_size / 2):
+    if grid_size == 0:
+        # No grid is drawn, so "square grid" units are meaningless — state the
+        # absolute pixel tolerance instead.
+        message_default = (
+            "The expected tolerance is "
+            + str(tol)
+            + " pixels for position and "
+            + str(angle_tol)
+            + " degrees for angle."
+        )
+    elif math.isclose(tol, grid_size / 2):
         message_default = (
             "The expected tolerance is 1/2 square grid for position and "
             + str(angle_tol)
@@ -455,7 +477,7 @@ def grade(element_html: str, data: pl.QuestionData) -> None:
     grid_size = pl.get_integer_attrib(
         element, "grid-size", defaults.element_defaults["grid-size"]
     )
-    tol = pl.get_float_attrib(element, "tol", grid_size / 2)
+    tol = pl.get_float_attrib(element, "tol", defaults.default_tol(grid_size))
     angtol = pl.get_float_attrib(
         element, "angle-tol", defaults.element_defaults["angle-tol"]
     )
@@ -619,7 +641,7 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
         grid_size = pl.get_integer_attrib(
             element, "grid-size", defaults.element_defaults["grid-size"]
         )
-        tol = pl.get_float_attrib(element, "tol", grid_size / 2)
+        tol = pl.get_float_attrib(element, "tol", defaults.default_tol(grid_size))
         angtol = pl.get_float_attrib(
             element, "angle-tol", defaults.element_defaults["angle-tol"]
         )
