@@ -5,6 +5,7 @@ import os
 import chevron
 import lxml.html
 import prairielearn as pl
+from prairielearn.colors import PLColor
 from text_unidecode import unidecode
 
 EDITOR_CONFIG_FUNCTION_DEFAULT = None
@@ -20,6 +21,7 @@ FOCUS_DEFAULT = False
 DIRECTORY_DEFAULT = "."
 NORMALIZE_TO_ASCII_DEFAULT = False
 ALLOW_BLANK_DEFAULT = False
+SHOW_FILE_IN_SUBMISSION_DEFAULT = True
 
 
 def get_answer_name(file_name: str) -> str:
@@ -43,6 +45,7 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         "directory",
         "normalize-to-ascii",
         "allow-blank",
+        "show-file-in-submission",
     ]
     pl.check_attribs(element, required_attribs, optional_attribs)
     source_file_name = pl.get_string_attrib(
@@ -67,6 +70,8 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
 
 
 def render(element_html: str, data: pl.QuestionData) -> str:
+    if data["panel"] == "submission":
+        return render_submission(element_html, data)
     if data["panel"] != "question":
         return ""
 
@@ -166,6 +171,57 @@ def render(element_html: str, data: pl.QuestionData) -> str:
         html_params["current_file_contents"] = html_params["original_file_contents"]
 
     with open("pl-file-editor.mustache", encoding="utf-8") as f:
+        return chevron.render(f, html_params).strip()
+
+
+def render_submission(element_html: str, data: pl.QuestionData) -> str:
+    element = lxml.html.fragment_fromstring(element_html)
+    file_name = pl.get_string_attrib(element, "file-name", "")
+    show_file_in_submission = pl.get_boolean_attrib(
+        element, "show-file-in-submission", SHOW_FILE_IN_SUBMISSION_DEFAULT
+    )
+
+    # Opt-out for courses that render the submission themselves (e.g. with
+    # pl-file-preview or pl-xss-safe inside pl-submission-panel), so the file is
+    # not shown twice.
+    if not show_file_in_submission:
+        return ""
+
+    if data["ai_grading"]:
+        # Match pl-file-preview: the submission content is provided to the LLM
+        # separately, so we render nothing extra for AI grading.
+        return ""
+
+    # Show only this element's own file (a question may have several editors).
+    submitted_files = data["submitted_answers"].get("_files", [])
+    submitted_file_contents = next(
+        (
+            f.get("contents", None)
+            for f in submitted_files
+            if f.get("name", None) == file_name
+        ),
+        None,
+    )
+
+    file_contents = None
+    if submitted_file_contents is not None:
+        # pl-file-editor only ever stores UTF-8 text, so we can decode and show it
+        # inline (no async download needed). Fall back to "no file" on the rare
+        # chance the stored contents are not valid UTF-8/base64.
+        try:
+            file_contents = base64.b64decode(submitted_file_contents).decode("utf-8")
+        except (ValueError, UnicodeDecodeError):
+            file_contents = None
+
+    html_params = {
+        "uuid": pl.get_uuid(),
+        "check_icon_color": PLColor("correct_green"),
+        "file_name": file_name,
+        "has_file": file_contents is not None,
+        "file_contents": file_contents,
+    }
+
+    with open("pl-file-editor-submission.mustache", encoding="utf-8") as f:
         return chevron.render(f, html_params).strip()
 
 
