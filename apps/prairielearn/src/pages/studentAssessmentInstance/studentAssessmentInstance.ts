@@ -272,7 +272,12 @@ router.get(
 
     const showTimeLimitExpiredModal = req.query.timeLimitExpired === 'true';
 
-    if (!res.locals.assessment.team_work) {
+    // Branch on whether *this instance* is a group instance, not on the
+    // assessment-level flag. An assessment can be switched to group work while
+    // individual instances are already open (issue #5092); those keep team_id =
+    // NULL and must render the individual view rather than have group info fetched
+    // for a null team id.
+    if (res.locals.assessment_instance.team_id === null) {
       res.send(
         StudentAssessmentInstance({
           instance_question_rows,

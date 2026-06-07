@@ -108,12 +108,19 @@ BEGIN
     -- the user about grading on an exam assessment instance. Be careful if you
     -- change this behavior!
     --
-    -- What about groups? No problem. Everything is the same, except for group work
-    -- we need to check instead that "there exists a team_users with the same team_id
-    -- as the assessment instance and the same user_id as the effective user."
+    -- What about groups? No problem. Everything is the same, except for a group
+    -- instance we need to check instead that "there exists a team_users with the
+    -- same team_id as the assessment instance and the same user_id as the
+    -- effective user."
+    --
+    -- We branch on the *instance's* team_id, not the assessment's group_work flag.
+    -- An assessment can be switched to group work while individual instances are
+    -- already open (see issue #5092); those instances keep team_id = NULL and must
+    -- still be owned via user_id. Conversely a group instance always has a team_id.
+    -- So team_id is the authoritative signal for how this instance is owned.
     IF
-        (((group_work) AND (NOT EXISTS (SELECT 1 FROM team_users AS gu JOIN teams AS g ON g.id = gu.team_id WHERE gu.team_id = assessment_instance.team_id AND gu.user_id = (authz_data->'user'->>'id')::bigint AND g.deleted_at IS NULL)))
-        OR ((NOT group_work) AND ((authz_data->'user'->>'id')::bigint != assessment_instance.user_id)))
+        ((assessment_instance.team_id IS NOT NULL) AND (NOT EXISTS (SELECT 1 FROM team_users AS gu JOIN teams AS g ON g.id = gu.team_id WHERE gu.team_id = assessment_instance.team_id AND gu.user_id = (authz_data->'user'->>'id')::bigint AND g.deleted_at IS NULL)))
+        OR ((assessment_instance.team_id IS NULL) AND ((authz_data->'user'->>'id')::bigint IS DISTINCT FROM assessment_instance.user_id))
     THEN
         authorized := authorized AND (authz_data->>'has_course_instance_permission_view')::boolean;
         authorized_edit := FALSE;
