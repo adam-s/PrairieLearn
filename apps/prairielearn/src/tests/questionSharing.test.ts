@@ -1290,6 +1290,110 @@ describe('Question Sharing', { timeout: 60_000 }, function () {
     );
   });
 
+  describe('Test publicly sharing an assessment that imports questions from another course', () => {
+    // Path to the consuming course's imported-question assessment on disk.
+    const consumingAssessmentInfoPath = () =>
+      path.join(
+        consumingCourse.path,
+        'courseInstances',
+        syncUtil.COURSE_INSTANCE_ID,
+        'assessments',
+        syncUtil.ASSESSMENT_ID,
+        'infoAssessment.json',
+      );
+
+    // Rewrite the consuming course's assessment with the given imported questions
+    // and `shareSourcePublicly` flag, then sync the consuming course from disk.
+    async function syncConsumingAssessment({
+      shareSourcePublicly,
+      importedQids,
+    }: {
+      shareSourcePublicly: boolean;
+      importedQids: string[];
+    }) {
+      const assessment = syncUtil.getCourseData().courseInstances[syncUtil.COURSE_INSTANCE_ID]
+        .assessments[syncUtil.ASSESSMENT_ID];
+      assessment.shareSourcePublicly = shareSourcePublicly;
+      assessment.zones = [{ questions: importedQids.map((id) => ({ id, points: 1 })) }];
+      await fs.writeJSON(consumingAssessmentInfoPath(), assessment);
+      return await withConfig({ checkSharingOnSync: true }, () =>
+        syncFromDisk.syncOrCreateDiskToSql(consumingCourse.path, logger),
+      );
+    }
+
+    afterAll(async () => {
+      // Restore the consuming assessment to its original (non-public, both imports) state.
+      await syncConsumingAssessment({
+        shareSourcePublicly: false,
+        importedQids: [
+          `@${SHARING_COURSE_SHARING_NAME}/${SHARING_QUESTION_QID}`,
+          `@${SHARING_COURSE_SHARING_NAME}/${PUBLICLY_SHARED_QUESTION_QID}`,
+        ],
+      });
+    });
+
+    test.sequential(
+      'Fail to sync a public assessment importing a question shared only via a sharing set',
+      async () => {
+        // `shared-via-sharing-set` is shared to the consuming course via a sharing
+        // set, but is NOT publicly shared. A public assessment importing it would
+        // 404 for any public viewer, so sync must reject it.
+        const syncResult = await syncConsumingAssessment({
+          shareSourcePublicly: true,
+          importedQids: [`@${SHARING_COURSE_SHARING_NAME}/${SHARING_QUESTION_QID}`],
+        });
+        assert.equal(syncResult.status, 'complete');
+
+        const assessment = await selectAssessmentByTid({
+          course_instance_id: consumingCourseInstanceId,
+          tid: syncUtil.ASSESSMENT_ID,
+        });
+        assert.isNotNull(assessment.sync_errors);
+        assert.match(assessment.sync_errors, /contains questions which are not publicly shared/);
+      },
+    );
+
+    test.sequential(
+      'Successfully sync a public assessment importing a publicly shared question from another course',
+      async () => {
+        // `shared-publicly` is publicly shared, so a public assessment importing it
+        // is valid and must sync without a sharing error.
+        const syncResult = await syncConsumingAssessment({
+          shareSourcePublicly: true,
+          importedQids: [`@${SHARING_COURSE_SHARING_NAME}/${PUBLICLY_SHARED_QUESTION_QID}`],
+        });
+        assert.equal(syncResult.status, 'complete');
+        assert.isFalse(syncResult.hadJsonErrorsOrWarnings);
+
+        const assessment = await selectAssessmentByTid({
+          course_instance_id: consumingCourseInstanceId,
+          tid: syncUtil.ASSESSMENT_ID,
+        });
+        assert.isNull(assessment.sync_errors);
+      },
+    );
+
+    test.sequential(
+      'Allow a non-public assessment to import a sharing-set-only question from another course',
+      async () => {
+        // The same sharing-set-only import is fine when the assessment is NOT public:
+        // the publicness requirement applies only to publicly shared assessments.
+        const syncResult = await syncConsumingAssessment({
+          shareSourcePublicly: false,
+          importedQids: [`@${SHARING_COURSE_SHARING_NAME}/${SHARING_QUESTION_QID}`],
+        });
+        assert.equal(syncResult.status, 'complete');
+        assert.isFalse(syncResult.hadJsonErrorsOrWarnings);
+
+        const assessment = await selectAssessmentByTid({
+          course_instance_id: consumingCourseInstanceId,
+          tid: syncUtil.ASSESSMENT_ID,
+        });
+        assert.isNull(assessment.sync_errors);
+      },
+    );
+  });
+
   describe('Test that deleted shared questions are excluded from imports', function () {
     // Resolve question IDs once before any soft-deletes; `selectQuestionByQid`
     // filters on `deleted_at IS NULL`, so the lookup would fail mid-test once
