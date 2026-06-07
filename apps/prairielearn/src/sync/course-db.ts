@@ -1014,10 +1014,20 @@ interface AccessRange {
   end: Date | null;
 }
 
-/** The date-bearing subset of an `allowAccess`/`publishing` rule. */
+/**
+ * The date-bearing subset of an `allowAccess`/`publishing` rule, plus the fields
+ * that mark an `allowAccess` rule as scoped to a non-general audience. A scoped
+ * rule (specific `uids`, or an exam via `mode: 'Exam'`/`examUuid`) intentionally
+ * uses dates that need not fall inside the general course-instance window, so it
+ * is excluded from the outside-the-window check. (`publishing` rules carry only
+ * dates; the scope fields are simply absent there.)
+ */
 interface DateBoundRule {
   startDate?: string | null;
   endDate?: string | null;
+  uids?: string[] | null;
+  mode?: string | null;
+  examUuid?: string | null;
 }
 
 /**
@@ -1107,6 +1117,12 @@ function getCourseInstanceAccessRange(
  * "until the course ends"), so an omitted assessment bound is never treated as
  * exceeding the course instance.
  *
+ * We also only consider *student-facing* rules. A rule scoped to specific `uids`
+ * (e.g. a staff-preview or makeup window) or to an exam (`mode: 'Exam'` /
+ * `examUuid`, a PrairieTest window) intentionally uses dates that need not fall
+ * inside the general course-instance window, so it is skipped — the warning
+ * would be noise on a deliberate configuration.
+ *
  * Only legacy `allowAccess` rules are checked: modern `accessControl` rules use
  * release/due-date semantics that do not map cleanly onto a single "accessible"
  * window, so comparing them would risk spurious warnings.
@@ -1124,6 +1140,13 @@ function checkAssessmentAccessWithinCourseInstance(
   if (ciStart == null && ciEnd == null) return warnings;
 
   const outside = (assessmentAllowAccess ?? []).some((rule) => {
+    // Skip rules that are not student-facing: a rule scoped to specific uids, or
+    // to an exam (mode: 'Exam' / examUuid), legitimately uses dates outside the
+    // general course-instance window, so it must not trigger the warning.
+    const isScoped =
+      (rule.uids != null && rule.uids.length > 0) || rule.mode === 'Exam' || rule.examUuid != null;
+    if (isScoped) return false;
+
     const ruleStart = rule.startDate != null ? parseJsonDate(rule.startDate) : null;
     const ruleEnd = rule.endDate != null ? parseJsonDate(rule.endDate) : null;
 

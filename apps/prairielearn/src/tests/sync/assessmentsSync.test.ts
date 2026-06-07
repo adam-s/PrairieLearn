@@ -1855,6 +1855,82 @@ describe('Assessment syncing', () => {
     }
   });
 
+  it('does not warn when an out-of-range access rule is restricted to specific uids', async () => {
+    // A rule scoped to specific uids (e.g. a staff-preview or makeup window) is
+    // not student-facing, so its dates intentionally need not sit inside the
+    // course instance window. The default course instance is accessible
+    // 2000–3000; this rule ends in 3001 but only applies to the listed uids.
+    const courseData = util.getCourseData();
+    const assessment = makeAssessment(courseData);
+    assessment.allowAccess?.push({
+      uids: ['ta@example.com'],
+      startDate: '2020-01-01T00:00:00',
+      endDate: '3001-01-01T00:00:00',
+    });
+    courseData.courseInstances[util.COURSE_INSTANCE_ID].assessments['uidsScopedOutside'] =
+      assessment;
+    await util.writeAndSyncCourseData(courseData);
+    const syncedAssessment = await findSyncedAssessment('uidsScopedOutside');
+    assert.isNotOk(syncedAssessment.sync_errors);
+    if (syncedAssessment.sync_warnings != null) {
+      assert.notMatch(
+        syncedAssessment.sync_warnings,
+        /Assessment access rule date range is outside the course instance access date range/,
+      );
+    }
+  });
+
+  it('does not warn when an out-of-range access rule is restricted to an exam', async () => {
+    // An exam-scoped rule (PrairieTest) intentionally uses the exam's own window,
+    // which legitimately differs from the course instance window, so it should
+    // not be flagged as outside.
+    const courseData = util.getCourseData();
+    const assessment = makeAssessment(courseData);
+    assessment.allowAccess?.push({
+      mode: 'Exam',
+      examUuid: 'f593a8c9-ccd4-449c-936c-c26c96ea089b',
+      startDate: '2020-01-01T00:00:00',
+      endDate: '3001-01-01T00:00:00',
+    });
+    courseData.courseInstances[util.COURSE_INSTANCE_ID].assessments['examScopedOutside'] =
+      assessment;
+    await util.writeAndSyncCourseData(courseData);
+    const syncedAssessment = await findSyncedAssessment('examScopedOutside');
+    assert.isNotOk(syncedAssessment.sync_errors);
+    if (syncedAssessment.sync_warnings != null) {
+      assert.notMatch(
+        syncedAssessment.sync_warnings,
+        /Assessment access rule date range is outside the course instance access date range/,
+      );
+    }
+  });
+
+  it('still warns about an out-of-range student-facing access rule alongside scoped rules', async () => {
+    // Scoping only excuses the scoped rule itself: a genuinely student-facing
+    // rule whose dates exceed the course instance window must still be flagged.
+    const courseData = util.getCourseData();
+    const assessment = makeAssessment(courseData);
+    assessment.allowAccess?.push(
+      {
+        uids: ['ta@example.com'],
+        endDate: '3001-01-01T00:00:00',
+      },
+      {
+        endDate: '3001-01-01T00:00:00',
+      },
+    );
+    courseData.courseInstances[util.COURSE_INSTANCE_ID].assessments['studentFacingOutside'] =
+      assessment;
+    await util.writeAndSyncCourseData(courseData);
+    const syncedAssessment = await findSyncedAssessment('studentFacingOutside');
+    assert.isNotOk(syncedAssessment.sync_errors);
+    assert.isNotNull(syncedAssessment.sync_warnings);
+    assert.match(
+      syncedAssessment.sync_warnings,
+      /Assessment access rule date range is outside the course instance access date range/,
+    );
+  });
+
   it('records an error if an access rule specifies an examUuid and mode=Public', async () => {
     const courseData = util.getCourseData();
     const assessment = makeAssessment(courseData);
