@@ -1,6 +1,6 @@
+import fs from 'node:fs/promises';
 import path from 'path';
 
-import fs from 'fs-extra';
 import tmp from 'tmp-promise';
 import { assert, describe, expect, it } from 'vitest';
 

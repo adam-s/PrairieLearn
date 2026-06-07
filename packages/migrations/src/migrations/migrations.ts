@@ -1,6 +1,6 @@
+import fs from 'node:fs/promises';
 import path from 'path';
 
-import fs from 'fs-extra';
 import { z } from 'zod';
 
 import * as error from '@prairielearn/error';

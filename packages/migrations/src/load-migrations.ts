@@ -1,4 +1,4 @@
-import fs from 'fs-extra';
+import fs from 'node:fs/promises';
 
 /**
  * Timestamp prefixes will be of the form `YYYYMMDDHHMMSS`, which will have 14 digits.
