@@ -108,14 +108,25 @@ async function syncCourseFromDisk(
  * A save-and-sync writes the file to disk (and pushes to git in production),
  * then syncs the entire course from disk to the database:
  *
- * - `save_failed`: the write/push failed; nothing reached the database.
+ * - `push_failed`: the local commit was made but could not be pushed to the
+ *   remote git repository (e.g. a GitHub outage or rejected push). The edit was
+ *   discarded and the local copy was reset to the remote version, so nothing
+ *   reached the database. This is distinguished from `save_failed` so the user
+ *   gets an accurate, actionable message (retry once the remote is reachable).
+ * - `save_failed`: the write failed (or another pre-push error occurred);
+ *   nothing reached the database.
  * - `sync_failed`: the save succeeded but the sync hard-failed.
  * - `sync_json_errors`: the save succeeded and the sync ran to completion, but
  *   one or more entities had invalid JSON. {@link syncCourseFromDisk} sets
  *   `hadJsonErrors` and throws, so `syncSucceeded` is never set in this case.
  * - `success`: the save and sync both completed cleanly.
  */
-export type EditOutcome = 'save_failed' | 'sync_failed' | 'sync_json_errors' | 'success';
+export type EditOutcome =
+  | 'push_failed'
+  | 'save_failed'
+  | 'sync_failed'
+  | 'sync_json_errors'
+  | 'success';
 
 /**
  * Interpret the flags an edit job records on `job.data` into a single outcome.
@@ -124,7 +135,7 @@ export type EditOutcome = 'save_failed' | 'sync_failed' | 'sync_json_errors' | '
  * re-deriving the meaning of the individual flags.
  */
 export function classifyEditOutcome(data: Record<string, unknown>): EditOutcome {
-  if (!data.saveSucceeded) return 'save_failed';
+  if (!data.saveSucceeded) return data.pushFailed ? 'push_failed' : 'save_failed';
   if (data.hadJsonErrors) return 'sync_json_errors';
   if (!data.syncSucceeded) return 'sync_failed';
   return 'success';
@@ -368,6 +379,11 @@ export abstract class Editor {
             // course data from disk after we do so.
             courseData = possibleCourseData;
           } catch {
+            // Record that the push (rather than the write or a pre-push step)
+            // is what failed, so a total failure can be reported to the user as
+            // a push failure rather than a generic save failure. Cleared below
+            // if the retry push succeeds.
+            job.data.pushFailed = true;
             job.info('Failed to push changes to remote git repository');
             job.info('Pulling changes from remote git repository and trying again');
 
@@ -394,6 +410,9 @@ export abstract class Editor {
                 // See above `git push` attempt for an explanation of this timeout.
                 cancelSignal: AbortSignal.timeout(30_000),
               });
+              // The retry push succeeded, so this was not ultimately a push
+              // failure.
+              job.data.pushFailed = false;
               job.data.saveSucceeded = true;
             } finally {
               // Clean up to remove any empty directories that might have been

@@ -53,6 +53,12 @@ function getSyncAlert(
     case undefined:
     case 'save_failed':
       return { alertClass: 'alert-danger', message: 'Failed to save file.' };
+    case 'push_failed':
+      return {
+        alertClass: 'alert-danger',
+        message:
+          'Failed to push to GitHub, so the file was not saved. The local copy was reset to the version on GitHub. Try again once GitHub is reachable.',
+      };
     case 'sync_failed':
       return {
         alertClass: 'alert-danger',
