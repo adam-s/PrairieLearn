@@ -677,7 +677,16 @@ router.get(
 
       const cursor = await sqldb.queryCursor(
         sql.assessment_instance_submissions,
-        { assessment_id: res.locals.assessment.id, include_all, include_final, include_best },
+        {
+          assessment_id: res.locals.assessment.id,
+          include_all,
+          include_final,
+          include_best,
+          // Omit uploaded file contents from the CSV: they bloat the cell and
+          // break CSV parsing. Files remain available via the *_files.zip
+          // archives below. See https://github.com/PrairieLearn/PrairieLearn/issues/4982
+          include_files: false,
+        },
         AssessmentInstanceSubmissionRowSchema,
       );
 
@@ -772,7 +781,14 @@ router.get(
 
       const cursor = await sqldb.queryCursor(
         sql.assessment_instance_submissions,
-        { assessment_id: res.locals.assessment.id, include_all, include_final, include_best },
+        {
+          assessment_id: res.locals.assessment.id,
+          include_all,
+          include_final,
+          include_best,
+          // The ZIP archive IS the file export, so it needs the file contents.
+          include_files: true,
+        },
         AssessmentInstanceSubmissionRowSchema,
       );
 

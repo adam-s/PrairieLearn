@@ -230,7 +230,10 @@ WITH
       s.date,
       s.id AS submission_id,
       s.date AS submission_date,
-      s.submitted_answer,
+      CASE
+        WHEN $include_files THEN s.submitted_answer
+        ELSE (s.submitted_answer - '_files')
+      END AS submitted_answer,
       s.partial_scores,
       s.override_score,
       s.credit,
