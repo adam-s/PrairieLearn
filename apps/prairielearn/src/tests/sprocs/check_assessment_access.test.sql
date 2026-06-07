@@ -141,6 +141,14 @@ WITH
         'Access Exam',
         1,
         1
+      ),
+      (
+        60,
+        'f4e7b1a0-2c3d-4e5f-8a9b-0c1d2e3f4a5b',
+        'cbtfExam',
+        'CBTF Exam',
+        1,
+        1
       )
   ),
   setup_assessment_access_rule AS (
@@ -225,10 +233,55 @@ WITH
         100,
         NULL,
         NULL
+      ),
+      -- Assessment 60 mirrors the CBTF allowAccess from issue #12579: a PT-gated
+      -- Exam rule plus an active:false fallback, both hiding the closed score.
+      -- Rule 1: Exam mode, gated on exam 890884f9 (the seeded checked-in exam),
+      -- with showClosedAssessment/showClosedAssessmentScore false.
+      (
+        60,
+        1,
+        'Exam',
+        NULL,
+        NULL,
+        100,
+        '890884f9-aa9d-4fc0-b910-5229794906fb',
+        NULL
+      ),
+      -- Rule 2: the active:false fallback (no mode, no exam_uuid), also hiding
+      -- the closed score. In Exam mode this rule is rejected (non-PT rules are
+      -- disallowed), so it never matches during the post-reservation grace period.
+      (
+        60,
+        2,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL,
+        NULL
       )
   )
 SELECT
   TRUE;
+
+-- The two rules above relax their show-closed flags to false. The defaults are
+-- TRUE, so set them explicitly (and mark rule 2 active:false) to match the
+-- issue's allowAccess exactly. This runs as a separate statement so the UPDATE
+-- sees the rows the INSERT above committed.
+UPDATE assessment_access_rules
+SET
+  show_closed_assessment = FALSE,
+  show_closed_assessment_score = FALSE
+WHERE
+  assessment_id = 60;
+
+UPDATE assessment_access_rules
+SET
+  active = FALSE
+WHERE
+  assessment_id = 60
+  AND number = 2;
 
 -- BLOCK insert_pt_reservation
 INSERT INTO
