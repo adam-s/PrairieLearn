@@ -1,4 +1,4 @@
-import { assert, describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { getDetailsForFile } from '../lib/editorUtil.js';
 import {
@@ -10,29 +10,29 @@ import {
 describe('editor library', () => {
   it('gets details for course info file', () => {
     const details = getDetailsForFile('infoCourse.json');
-    assert.equal(details.type, 'course');
+    expect(details.type).toBe('course');
   });
 
   it('gets details for course instance info file', () => {
     const details = getDetailsForFile(
       'courseInstances/testinstance/infoCourseInstance.json',
     ) as CourseInstanceInfo;
-    assert.equal(details.type, 'courseInstance');
-    assert.equal(details.ciid, 'testinstance');
+    expect(details.type).toBe('courseInstance');
+    expect(details.ciid).toBe('testinstance');
   });
 
   it('gets details for question info', () => {
     const details = getDetailsForFile('questions/testquestion/info.json') as QuestionInfo;
-    assert.equal(details.type, 'question');
-    assert.equal(details.qid, 'testquestion');
+    expect(details.type).toBe('question');
+    expect(details.qid).toBe('testquestion');
   });
 
   it('gets details for assessment info file', () => {
     const details = getDetailsForFile(
       'courseInstances/testinstance/assessments/testassessment/infoAssessment.json',
     ) as AssessmentInfo;
-    assert.equal(details.type, 'assessment');
-    assert.equal(details.ciid, 'testinstance');
-    assert.equal(details.aid, 'testassessment');
+    expect(details.type).toBe('assessment');
+    expect(details.ciid).toBe('testinstance');
+    expect(details.aid).toBe('testassessment');
   });
 });
