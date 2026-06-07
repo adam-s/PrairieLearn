@@ -234,3 +234,93 @@ def test_test_invalid_submission_when_builtin_grading_false() -> None:
 
     assert data["raw_submitted_answers"]["survey"] == "0"
     assert "survey" in data["format_errors"]
+
+
+# --- Inline display must not emit block-level wrappers (issue #10538) ----------
+#
+# A block-level <div> inside an author's <p> triggers the HTML parser's "tag
+# omission" rule, prematurely closing the <p> and breaking the inline flow when
+# `display="inline"` is used next to text. The inline variant must therefore render
+# only inline (<span>) wrappers; the block variant keeps its <div> wrappers.
+# https://github.com/PrairieLearn/PrairieLearn/issues/10538
+
+import os  # noqa: E402
+import pathlib  # noqa: E402
+
+import lxml.html  # noqa: E402
+
+# `render()` opens the mustache template by a path relative to the element
+# directory (matching how PrairieLearn runs element code with that dir as cwd).
+_ELEMENT_DIR = pathlib.Path(__file__).resolve().parent
+
+
+@pytest.fixture
+def _in_element_dir() -> Any:
+    prev = os.getcwd()
+    os.chdir(_ELEMENT_DIR)
+    try:
+        yield
+    finally:
+        os.chdir(prev)
+
+
+def _render_panel(html: str, panel: str, *, submitted_key: str | None = None) -> str:
+    data = _make_question_data()
+    pl_multiple_choice.prepare(html, data)
+    data["panel"] = panel
+    data["editable"] = True
+    if submitted_key is not None:
+        data["submitted_answers"]["survey"] = submitted_key
+        if panel == "submission":
+            pl_multiple_choice.parse(html, data)
+    return pl_multiple_choice.render(html, data)
+
+
+def _has_div_descendant(html: str) -> bool:
+    # Parse the fragment the same way a browser would and ask whether any <div>
+    # appears anywhere in the rendered subtree.
+    root = lxml.html.fragment_fromstring(html, create_parent="div")
+    return any(child.tag == "div" for child in root.iter() if child is not root)
+
+
+INLINE_MC = mc_html(
+    'display="inline"',
+    '<pl-answer correct="true">A</pl-answer><pl-answer>B</pl-answer>',
+    builtin_grading=True,
+)
+BLOCK_MC = mc_html(
+    'display="block"',
+    '<pl-answer correct="true">A</pl-answer><pl-answer>B</pl-answer>',
+    builtin_grading=True,
+)
+
+
+@pytest.mark.usefixtures("_in_element_dir")
+def test_inline_question_panel_has_no_block_wrappers() -> None:
+    out = _render_panel(INLINE_MC, "question")
+    assert not _has_div_descendant(out), (
+        "inline pl-multiple-choice must not render <div> wrappers "
+        "(they close the surrounding <p> via HTML tag omission)"
+    )
+    # The choices are still rendered, just as inline <span> form-checks.
+    assert "form-check-inline" in out
+
+
+@pytest.mark.usefixtures("_in_element_dir")
+def test_inline_submission_panel_has_no_block_wrappers() -> None:
+    out = _render_panel(INLINE_MC, "submission", submitted_key="a")
+    assert not _has_div_descendant(out), (
+        "inline pl-multiple-choice submission must not render <div> wrappers"
+    )
+
+
+@pytest.mark.usefixtures("_in_element_dir")
+def test_block_question_panel_layout_unchanged() -> None:
+    # Backwards compatibility: block display keeps its block-level flex layout
+    # (driven by the `d-flex` class, which makes even a <span> a block-level flex
+    # container). The wrapper tag changing div->span is invisible to the user.
+    out = _render_panel(BLOCK_MC, "question")
+    assert "form-check d-flex" in out, "block layout (d-flex) must be preserved"
+    assert "form-check-inline" not in out, "block display must not use the inline layout"
+    # Both choices are still rendered.
+    assert out.count("form-check d-flex") == 2
