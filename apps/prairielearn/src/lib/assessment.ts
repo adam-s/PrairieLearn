@@ -186,7 +186,14 @@ export async function updateAssessmentInstance(
       IdSchema,
     );
 
-    const pointsByZone = await computeAssessmentInstanceScoreByZone({ assessment_instance_id });
+    // This is a recompute path (no explicit credit -> updateAssessmentInstanceGrade
+    // resolves credit per instance below), so exclude no-credit questions from the
+    // per-question points (issue #958, multi-question case). max_points is not
+    // gated, so totalPointsZones (built from zone.max_points) is unaffected.
+    const pointsByZone = await computeAssessmentInstanceScoreByZone({
+      assessment_instance_id,
+      excludeNoCreditQuestions: true,
+    });
     const totalPointsZones = pointsByZone.reduce((sum, zone) => sum + zone.max_points, 0);
 
     const newMaxPoints = await sqldb.queryOptionalRow(

@@ -45,11 +45,25 @@ export async function updateAssessmentInstanceGrade({
       AssessmentInstanceSchema,
     );
 
+    // Whether the caller omitted credit -- i.e. this is a regrade/recompute, with
+    // no single "current submission" whose credit applies. On these paths credit
+    // is resolved per instance and the instance total is computed per question
+    // (each question counts only if its own work was earned under credit); on the
+    // submission path credit is explicit and only the instance-wide gate applies.
+    const creditWasOmitted = credit == null;
+
     if (credit == null) {
-      // If credit was not explicitly set, fetch it from the last submission.
+      // If credit was not explicitly set (the regrade/recompute paths), resolve
+      // it from the highest credit the instance's submitted work counts under --
+      // NOT the most recent submission's credit. A later no-credit practice
+      // submission must not suppress a regrade of points the student earned under
+      // an earlier for-credit rule. An instance whose submissions are all
+      // no-credit (or have a NULL credit) resolves to 0. This instance-wide value
+      // drives the score-percentage cap below; the per-question exclusion (passed
+      // to the points computation) handles which questions' points count.
       credit =
         (await queryOptionalScalar(
-          sql.select_credit_of_last_submission,
+          sql.select_max_credit_of_submissions,
           { assessment_instance_id },
           SubmissionSchema.shape.credit,
         )) ?? 0;
@@ -57,15 +71,32 @@ export async function updateAssessmentInstanceGrade({
 
     const pointsByZone =
       precomputedPointsByZone ??
-      (await computeAssessmentInstanceScoreByZone({ assessment_instance_id }));
+      (await computeAssessmentInstanceScoreByZone({
+        assessment_instance_id,
+        // On a regrade/recompute, exclude questions whose own work was not earned
+        // for credit, so a no-credit question is not folded into the instance
+        // total just because a different question was answered for credit
+        // (issue #958, multi-question case). Callers that pass an explicit credit
+        // (a submission, manual/AI grading) keep the existing whole-instance gate.
+        excludeNoCreditQuestions: creditWasOmitted,
+      }));
     const instanceQuestionsUsedForGrade = pointsByZone.flatMap((zone) => zone.iq_ids);
     const totalPoints = pointsByZone.reduce((sum, zone) => sum + zone.points, 0);
 
-    // compute the score in points, maxing out at max_points + max_bonus_points
-    const points = Math.min(
+    // If the effective access rule grants no credit, working a question must not
+    // change the recorded points -- preserve the existing value (left unset for
+    // students who never attempted for credit) rather than overwriting it with
+    // the uncredited earned points (issue #958). Only the points value is gated:
+    // the bookkeeping below (used_for_grade, modified_at, the score log) still
+    // runs so a no-credit attempt is recorded consistently. Staff actions that
+    // should always apply (e.g. manual grading) pass an explicit non-zero credit,
+    // and a regrade resolves the for-credit rule above (and excludes no-credit
+    // questions per-question, in totalPoints), so neither is gated incorrectly.
+    const computedPoints = Math.min(
       totalPoints,
       (assessmentInstance.max_points ?? 0) + (assessmentInstance.max_bonus_points ?? 0),
     );
+    const points = credit === 0 ? (assessmentInstance.points ?? 0) : computedPoints;
 
     // Compute the score as a percentage, applying credit bonus/limits. If
     // max_points is zero (or null), points will typically also be zero, so we
@@ -102,12 +133,18 @@ export async function updateAssessmentInstanceGrade({
 
 export async function computeAssessmentInstanceScoreByZone({
   assessment_instance_id,
+  excludeNoCreditQuestions = false,
 }: {
   assessment_instance_id: string;
+  // When true (the regrade/recompute paths, which resolve credit per instance),
+  // a question whose own work counts under no credit contributes 0 to the
+  // instance points. The submission path leaves this false and relies on the
+  // explicit per-submission credit instead. See the SQL block for details.
+  excludeNoCreditQuestions?: boolean;
 }) {
   return await queryRows(
     sql.compute_assessment_instance_points_by_zone,
-    { assessment_instance_id },
+    { assessment_instance_id, exclude_no_credit_questions: excludeNoCreditQuestions },
     AssessmentInstanceZonePointsSchema,
   );
 }

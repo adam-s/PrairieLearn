@@ -1,0 +1,29 @@
+{
+  "uuid": "e7dae3a6-d99d-44dd-8fbb-7bdc7a9f302f",
+  "type": "Homework",
+  "title": "Homework to test no-credit handling of a manually-graded question",
+  "set": "Homework",
+  "number": "23",
+  "allowAccess": [
+    {
+      "startDate": "2020-01-01T00:00:01",
+      "endDate": "2020-12-31T23:59:59",
+      "credit": 100
+    },
+    {
+      "startDate": "2021-01-01T00:00:01",
+      "endDate": "2030-12-31T23:59:59",
+      "active": true,
+      "credit": 0
+    }
+  ],
+  "zones": [
+    {
+      "title": "Main zone",
+      "questions": [
+        { "id": "partialCredit1", "autoPoints": 10 },
+        { "id": "manualGrade/shortAnswer", "manualPoints": 10 }
+      ]
+    }
+  ]
+}
