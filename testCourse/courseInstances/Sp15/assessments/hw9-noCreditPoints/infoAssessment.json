@@ -1,0 +1,26 @@
+{
+  "uuid": "f5187787-5149-4a91-b7e0-aca6e6399226",
+  "type": "Homework",
+  "title": "Homework to test no-credit points handling",
+  "set": "Homework",
+  "number": "9",
+  "allowAccess": [
+    {
+      "startDate": "2020-01-01T00:00:01",
+      "endDate": "2020-12-31T23:59:59",
+      "credit": 100
+    },
+    {
+      "startDate": "2021-01-01T00:00:01",
+      "endDate": "2030-12-31T23:59:59",
+      "active": true,
+      "credit": 0
+    }
+  ],
+  "zones": [
+    {
+      "title": "Main zone",
+      "questions": [{ "id": "partialCredit1", "autoPoints": 10 }]
+    }
+  ]
+}

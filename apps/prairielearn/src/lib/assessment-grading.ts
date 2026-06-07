@@ -55,6 +55,20 @@ export async function updateAssessmentInstanceGrade({
         )) ?? 0;
     }
 
+    // If the effective access rule grants no credit, working a question must not
+    // change the recorded points/score at all. This preserves the existing value
+    // (left unset for students who never attempted for credit), rather than
+    // overwriting it with the uncredited earned points. Staff actions that should
+    // always apply (e.g. manual grading) pass an explicit non-zero credit, so
+    // they are unaffected.
+    if (credit === 0) {
+      return {
+        updated: false,
+        points: assessmentInstance.points ?? 0,
+        score_perc: assessmentInstance.score_perc ?? 0,
+      };
+    }
+
     const pointsByZone =
       precomputedPointsByZone ??
       (await computeAssessmentInstanceScoreByZone({ assessment_instance_id }));
