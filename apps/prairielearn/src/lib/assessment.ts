@@ -455,26 +455,35 @@ export async function updateAssessmentStatisticsForCourseInstance(
     { course_instance_id },
     IdSchema,
   );
-  await async.eachLimit(rows, 3, updateAssessmentStatistics);
+  await async.eachLimit(rows, 3, (assessment_id) => updateAssessmentStatistics(assessment_id));
 }
 
 /**
  * Updates statistics for an assessment, if needed.
  *
  * @param assessment_id - The assessment ID.
+ * @param force - Recompute even if the modified-time heuristic says no update is
+ *   needed. Required after deleting assessment instances: a hard delete removes
+ *   the only row the heuristic inspects, so it can never detect the change on its
+ *   own (see issue #11060).
  */
-export async function updateAssessmentStatistics(assessment_id: string): Promise<void> {
+export async function updateAssessmentStatistics(
+  assessment_id: string,
+  { force = false }: { force?: boolean } = {},
+): Promise<void> {
   await sqldb.runInTransactionAsync(async () => {
     // lock the assessment
     await sqldb.executeRow(sql.select_assessment_lock, { assessment_id });
 
-    // check whether we need to update the statistics
-    const needs_statistics_update = await sqldb.queryScalar(
-      sql.select_assessment_needs_statistics_update,
-      { assessment_id },
-      z.boolean(),
-    );
-    if (!needs_statistics_update) return;
+    if (!force) {
+      // check whether we need to update the statistics
+      const needs_statistics_update = await sqldb.queryScalar(
+        sql.select_assessment_needs_statistics_update,
+        { assessment_id },
+        z.boolean(),
+      );
+      if (!needs_statistics_update) return;
+    }
 
     // update the statistics
     await sqldb.executeRow(sql.update_assessment_statistics, { assessment_id });
@@ -626,6 +635,9 @@ export async function deleteAssessmentInstance(
       'This assessment instance does not exist in this assessment.',
     );
   }
+  // A hard delete removes the row the needs-update heuristic relies on, so force
+  // a recompute over the remaining instances (issue #11060).
+  await updateAssessmentStatistics(assessment_id, { force: true });
 }
 
 export async function deleteAllAssessmentInstancesForAssessment(
@@ -638,6 +650,9 @@ export async function deleteAllAssessmentInstancesForAssessment(
     authn_user_id,
     assessment_instance_ids,
   });
+  // A hard delete removes the rows the needs-update heuristic relies on, so force
+  // a recompute over the remaining instances (issue #11060).
+  await updateAssessmentStatistics(assessment_id, { force: true });
 }
 
 export async function selectAssessmentInstanceLastSubmissionDate(assessment_instance_id: string) {
