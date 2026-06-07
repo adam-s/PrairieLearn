@@ -346,6 +346,11 @@ function getParamsForAssessment(
           // higher ones.
           allow_real_time_grading: alternative.allowRealTimeGrading,
           question_id: questionId,
+          // The QID reference as written in the assessment. Used by the sproc
+          // when `question_id` is null (a shared question whose producing
+          // course isn't present in local dev) to give the placeholder row a
+          // non-null `qid` instead of writing NULL to `questions.qid`.
+          qid: alternative.qid,
           number_in_alternative_group: alternativeIndex + 1,
           can_view: alternative.canView,
           can_submit: alternative.canSubmit,

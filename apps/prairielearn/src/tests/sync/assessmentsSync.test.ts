@@ -173,6 +173,30 @@ describe('Assessment syncing', () => {
     assert.equal(syncedData.assessment_questions[1].question.qid, util.ALTERNATIVE_QUESTION_ID);
   });
 
+  it('writes a non-null qid for a placeholder shared question missing in local dev', async () => {
+    // In local dev (checkSharingOnSync = false), referencing a shared question
+    // whose producing course is not present locally inserts a placeholder row
+    // into `questions`. That row must NOT have a NULL qid: instead it stores the
+    // full shared QID reference. See issue #10269.
+    const sharedQid = '@some-sharing-course/someQuestion';
+    const courseData = util.getCourseData();
+    const assessment = makeAssessment(courseData);
+    assessment.zones?.push({
+      title: 'zone 1',
+      questions: [{ id: sharedQid, points: 5 }],
+    });
+    courseData.courseInstances[util.COURSE_INSTANCE_ID].assessments['sharedMissing'] = assessment;
+
+    // Default config has checkSharingOnSync = false, exercising the placeholder path.
+    await util.writeAndSyncCourseData(courseData);
+
+    const syncedData = await getSyncedAssessmentData('sharedMissing');
+    assert.lengthOf(syncedData.assessment_questions, 1);
+    const placeholderQuestion = syncedData.assessment_questions[0].question;
+    assert.isNotNull(placeholderQuestion.qid);
+    assert.equal(placeholderQuestion.qid, sharedQid);
+  });
+
   it('defaults shuffleQuestions to true for an Exam-type assessment', async () => {
     const courseData = util.getCourseData();
     const assessment = makeAssessment(courseData, 'Exam');
