@@ -26,6 +26,18 @@ def get_answer_name(file_name: str) -> str:
     return "_file_editor_{}".format(hashlib.sha1(file_name.encode("utf-8")).hexdigest())
 
 
+def add_format_error(
+    answer_name: str, data: pl.QuestionData, error_string: str
+) -> None:
+    # Record the error under both the "_files" key (shown in the submission panel)
+    # and the element's answer_name (shown beside this input in the question panel).
+    pl.add_files_format_error(data, error_string)
+
+    if answer_name not in data["format_errors"]:
+        data["format_errors"][answer_name] = []
+    data["format_errors"][answer_name].append(error_string)
+
+
 def prepare(element_html: str, data: pl.QuestionData) -> None:
     element = lxml.html.fragment_fromstring(element_html)
     required_attribs = ["file-name"]
@@ -135,6 +147,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
         "uuid": uuid,
         "focus": focus,
         "question": True,
+        "parse_error": "<br>".join(data["format_errors"].get(answer_name, [])),
     }
 
     if source_file_name is not None:
@@ -181,7 +194,7 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
     # Get submitted answer or return parse_error if it does not exist
     file_contents = data["submitted_answers"].get(answer_name, "")
     if not file_contents and not allow_blank:
-        pl.add_files_format_error(data, f"No submitted answer for {file_name}")
+        add_format_error(answer_name, data, f"No submitted answer for {file_name}")
         return
 
     # We will store the files in the submitted_answer["_files"] key,
@@ -195,8 +208,8 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
             normalized = unidecode(decoded_contents)
             file_contents = base64.b64encode(normalized.encode("UTF-8")).decode()
         except UnicodeError:
-            pl.add_files_format_error(
-                data, "Submitted answer is not a valid UTF-8 string."
+            add_format_error(
+                answer_name, data, "Submitted answer is not a valid UTF-8 string."
             )
 
     pl.add_submitted_file(data, file_name, file_contents)
