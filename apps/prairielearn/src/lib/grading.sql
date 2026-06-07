@@ -46,6 +46,21 @@ ORDER BY
 LIMIT
   1;
 
+-- BLOCK select_last_gradable_submission_of_variant
+SELECT
+  s.*
+FROM
+  submissions AS s
+WHERE
+  s.variant_id = $variant_id
+  AND s.gradable IS TRUE
+  AND s.broken IS NOT TRUE
+ORDER BY
+  s.date DESC,
+  s.id DESC
+LIMIT
+  1;
+
 -- BLOCK update_variant_true_answer
 WITH
   updated_variant AS (

@@ -106,6 +106,13 @@ SELECT
       vnew.instance_question_id = iq.id
       AND s.id != snew.id
       AND snew.date > s.date
+      -- A newer submission only "shadows" this one if it can itself be graded.
+      -- An invalid (non-gradable) or broken submission will never produce a
+      -- grade, so it must not block grading the last valid submission. This is
+      -- what lets non-real-time grading fall back to the last valid submission
+      -- (https://github.com/PrairieLearn/PrairieLearn/issues/3878).
+      AND snew.gradable IS TRUE
+      AND snew.broken IS NOT TRUE
   ) AS has_newer_submission
 FROM
   submissions AS s

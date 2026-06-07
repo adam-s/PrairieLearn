@@ -314,9 +314,16 @@ async function selectSubmissionForGrading(
       return null;
     }
 
-    // Select the most recent submission
+    // Normally we grade the most recent submission. But when real-time grading is
+    // disabled, grading is deferred until the assessment is closed, so the student
+    // never chose which submission to grade. If their final submission is invalid
+    // (e.g. the time limit expired with a malformed answer in the box), we should
+    // fall back to the most recent *valid* submission rather than awarding zero. See
+    // https://github.com/PrairieLearn/PrairieLearn/issues/3878.
     const submission = await sqldb.queryOptionalRow(
-      sql.select_last_submission_of_variant,
+      variantData.allow_real_time_grading === false
+        ? sql.select_last_gradable_submission_of_variant
+        : sql.select_last_submission_of_variant,
       { variant_id },
       SubmissionSchema,
     );
