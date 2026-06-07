@@ -585,8 +585,10 @@ def render(element_html: str, data: pl.QuestionData) -> str:
                     f'<small class="form-text text-muted">Select {insert_text}</small>'
                 )
             else:
-                # This is the case where we reveal nothing about min_options_to_select and max_options_to_select.
-                helptext = f'<small class="form-text text-muted">Select all possible options that apply.{number_correct_text}</small>'
+                # We reveal nothing about the exact min/max counts here, but a
+                # submission must still select at least one option (the minimum
+                # enforced by parse()), so we state that to match the validation.
+                helptext = f'<small class="form-text text-muted">Select all options that apply. You must select at least one option.{number_correct_text}</small>'
 
             grading_info = generate_grading_text(
                 insert_text=insert_text,
