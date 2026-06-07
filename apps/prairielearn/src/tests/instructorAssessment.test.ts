@@ -368,6 +368,13 @@ describe('Instructor assessment editing', { timeout: 20_000 }, function () {
       elemList = locals.data$('form input[name="points"]');
       assert.lengthOf(elemList, 1);
     });
+    it('data-bs-content trailing addon should use the Bootstrap 5 input-group-text class', function () {
+      // Regression for #10523: the trailing "/<max_points>" addon used the
+      // Bootstrap 4 class `input-group-addon` (removed in BS5), so it rendered
+      // unstyled. It must be `input-group-text` like every other input group.
+      assert.lengthOf(locals.data$('.input-group .input-group-text'), 1);
+      assert.lengthOf(locals.data$('.input-group-addon'), 0);
+    });
   });
 
   describe('12. POST to instructor assessment instance URL to set total points', function () {
@@ -432,6 +439,13 @@ describe('Instructor assessment editing', { timeout: 20_000 }, function () {
     it('data-bs-content should have a score_perc input', function () {
       elemList = locals.data$('form input[name="score_perc"]');
       assert.lengthOf(elemList, 1);
+    });
+    it('data-bs-content trailing addon should use the Bootstrap 5 input-group-text class', function () {
+      // Regression for #10523: the trailing "%" addon used the Bootstrap 4
+      // class `input-group-addon` (removed in BS5), so it rendered unstyled.
+      // It must be `input-group-text` like every other input group.
+      assert.lengthOf(locals.data$('.input-group .input-group-text'), 1);
+      assert.lengthOf(locals.data$('.input-group-addon'), 0);
     });
   });
 
