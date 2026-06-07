@@ -6,3 +6,14 @@
 .pl-string-input-input {
   height: auto;
 }
+
+/*
+ * Preserve literal spaces in math labels (issue #4371). Bootstrap's
+ * `.input-group-text` sets `white-space: nowrap`, and MathJax renders inline
+ * math (`$...$`) as a block-level `mjx-container`; under `nowrap` the literal
+ * whitespace adjacent to that block collapses, so `label="$L$ is "` renders as
+ * "Lis". `pre-wrap` keeps the spaces while still allowing the label to wrap.
+ */
+.pl-string-input .input-group-text[id$='-label'] {
+  white-space: pre-wrap;
+}
