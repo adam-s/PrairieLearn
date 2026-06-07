@@ -515,7 +515,17 @@ export async function getAndRenderVariant(
         variant_course: locals.course,
         question_course,
         options: { variant_seed },
-        require_open: !!locals.assessment && locals.assessment.type !== 'Exam',
+        // For non-single-variant Homework questions each attempt should get a
+        // fresh variant, so we require the existing variant to be open (a graded
+        // variant is closed). A single_variant question, however, is meant to
+        // reuse one variant forever regardless of its open/closed state; if the
+        // question was switched to single_variant after a variant was already
+        // closed (e.g. answered correctly), requiring it be open would discard
+        // the student's answered variant and regenerate a new one. See issue #802.
+        require_open:
+          !!locals.assessment &&
+          locals.assessment.type !== 'Exam' &&
+          !locals.question.single_variant,
         client_fingerprint_id: locals.client_fingerprint_id ?? null,
       });
     }
