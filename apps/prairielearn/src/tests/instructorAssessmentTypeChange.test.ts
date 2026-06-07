@@ -118,7 +118,7 @@ describe('Changing assessment type', () => {
       const info = await readLiveInfo();
       assert.equal(info.type, 'Exam');
       assert.notProperty(info, 'constantQuestionValue');
-      const question = info.zones?.[0].questions[0];
+      const question = info.zones?.[0].questions![0];
       assert.notProperty(question, 'maxAutoPoints');
       assert.notProperty(question, 'maxPoints');
       assert.equal(question?.autoPoints, 5);
@@ -156,7 +156,7 @@ describe('Changing assessment type', () => {
       });
 
       const info = await readLiveInfo();
-      const alternative = info.zones?.[0].questions[0].alternatives?.[0];
+      const alternative = info.zones?.[0].questions![0].alternatives?.[0];
       assert.notProperty(alternative, 'maxAutoPoints');
       assert.equal(alternative?.autoPoints, 5);
     });
@@ -178,7 +178,7 @@ describe('Changing assessment type', () => {
       });
 
       const info = await readLiveInfo();
-      assert.notProperty(info.zones?.[0].questions[0], 'maxPoints');
+      assert.notProperty(info.zones?.[0].questions![0], 'maxPoints');
     });
   });
 
@@ -254,7 +254,7 @@ describe('Changing assessment type', () => {
       assert.notProperty(info, 'allowRealTimeGrading');
       const zone = info.zones?.[0];
       assert.notProperty(zone, 'allowRealTimeGrading');
-      const question = zone?.questions[0];
+      const question = zone?.questions![0];
       assert.notProperty(question, 'allowRealTimeGrading');
       assert.notProperty(question?.alternatives?.[0], 'allowRealTimeGrading');
     });
@@ -276,7 +276,7 @@ describe('Changing assessment type', () => {
       });
 
       const info = await readLiveInfo();
-      assert.equal(info.zones?.[0].questions[0].autoPoints, 10);
+      assert.equal(info.zones?.[0].questions![0].autoPoints, 10);
     });
 
     test.sequential('collapses points array on alternatives to first element', async () => {
@@ -300,7 +300,7 @@ describe('Changing assessment type', () => {
       });
 
       const info = await readLiveInfo();
-      assert.equal(info.zones?.[0].questions[0].alternatives?.[0].points, 8);
+      assert.equal(info.zones?.[0].questions![0].alternatives?.[0].points, 8);
     });
   });
 

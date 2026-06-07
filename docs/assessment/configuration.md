@@ -161,7 +161,7 @@ An assessment is broken down in to a list of zones, like this:
 | Zone Property              | Type    | Description                                                                                                                                           |
 | -------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `title`                    | string  | The title of the zone. (Optional; default: none)                                                                                                      |
-| `questions`                | array   | The list of slots for questions and question alternatives within the zone. (Required; no default)                                                     |
+| `questions`                | array   | The list of slots for questions and question alternatives within the zone. (Optional; default: empty)                                                 |
 | `numberChoose`             | integer | Number of questions to select for each student from this zone. (Optional; default: select all)                                                        |
 | `maxPoints`                | number  | Limit on the number of points that can be earned from this zone. (Optional; default: sum of question max points)                                      |
 | `bestQuestions`            | integer | Only this many questions in the zone will count towards the total points (highest-point questions will count). (Optional; default: use all questions) |

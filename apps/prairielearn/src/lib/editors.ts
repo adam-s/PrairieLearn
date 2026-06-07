@@ -1077,7 +1077,7 @@ async function updateInfoAssessmentFilesForTargetCourse(
     // Rewrite the question IDs to include the course sharing name,
     // or to point to the new path if the question was copied
     for (const zone of infoJson.zones) {
-      for (const question of zone.questions) {
+      for (const question of zone.questions ?? []) {
         if (question.id) {
           if (question.id in newQids) {
             question.id = newQids[question.id];

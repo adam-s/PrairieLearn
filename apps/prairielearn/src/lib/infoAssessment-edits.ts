@@ -56,7 +56,7 @@ function mapQidsInZone(
 ): { questions: ZoneQuestionBlockJsonInput[]; changedQids: string[] } {
   const changedQids: string[] = [];
   const questions: ZoneQuestionBlockJsonInput[] = [];
-  for (const block of zone.questions) {
+  for (const block of zone.questions ?? []) {
     const result = mapQidsInBlock(block, mapQid);
     changedQids.push(...result.changedQids);
     if (result.block) questions.push(result.block);
@@ -107,7 +107,7 @@ function mapAssessmentQids(
   for (const [zoneIndex, zone] of (assessment.zones ?? []).entries()) {
     const { questions, changedQids } = mapQidsInZone(zone, mapQid);
     changedCount += changedQids.length;
-    const wouldBeEmpty = zone.questions.length > 0 && questions.length === 0;
+    const wouldBeEmpty = (zone.questions?.length ?? 0) > 0 && questions.length === 0;
     if (changedQids.length > 0) {
       affectedZones.push({
         zoneIndex,

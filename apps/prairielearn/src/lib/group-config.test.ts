@@ -320,9 +320,9 @@ describe('cascadeRoleRenamesToZones', () => {
       { name: 'Team Lead', origName: 'Manager' },
       { name: 'Recorder', origName: 'Recorder' },
     ]);
-    assert.deepEqual(json.zones![0].questions[0].canView, ['Team Lead']);
-    assert.deepEqual(json.zones![0].questions[0].canSubmit, ['Recorder']);
-    assert.deepEqual(json.zones![0].questions[1].canView, ['Team Lead', 'Recorder']);
+    assert.deepEqual(json.zones![0].questions![0].canView, ['Team Lead']);
+    assert.deepEqual(json.zones![0].questions![0].canSubmit, ['Recorder']);
+    assert.deepEqual(json.zones![0].questions![1].canView, ['Team Lead', 'Recorder']);
   });
 
   it('removes references to deleted roles', () => {
@@ -336,7 +336,7 @@ describe('cascadeRoleRenamesToZones', () => {
     cascadeRoleRenamesToZones(json, [{ name: 'Manager', origName: 'Manager' }]);
     assert.deepEqual(json.zones![0].canView, ['Manager']);
     assert.deepEqual(json.zones![0].canSubmit, []);
-    assert.deepEqual(json.zones![0].questions[0].canView, ['Manager']);
+    assert.deepEqual(json.zones![0].questions![0].canView, ['Manager']);
   });
 
   it('treats null origName (new role) as having no rename', () => {
@@ -362,7 +362,7 @@ describe('cascadeRoleRenamesToZones', () => {
     cascadeRoleRenamesToZones(json, [{ name: 'Manager', origName: 'Manager' }]);
     assert.isUndefined(json.zones![0].canView);
     assert.isUndefined(json.zones![0].canSubmit);
-    assert.isUndefined(json.zones![0].questions[0].canView);
+    assert.isUndefined(json.zones![0].questions![0].canView);
   });
 
   it('no-ops when origName matches name', () => {
@@ -377,7 +377,7 @@ describe('cascadeRoleRenamesToZones', () => {
       { name: 'Recorder', origName: 'Recorder' },
     ]);
     assert.deepEqual(json.zones![0].canView, ['Manager', 'Recorder']);
-    assert.deepEqual(json.zones![0].questions[0].canView, ['Recorder']);
+    assert.deepEqual(json.zones![0].questions![0].canView, ['Recorder']);
   });
 
   it('handles a role that was deleted, combined with a rename', () => {
@@ -392,7 +392,7 @@ describe('cascadeRoleRenamesToZones', () => {
       { name: 'Recorder', origName: 'Recorder' },
     ]);
     assert.deepEqual(json.zones![0].canView, ['Team Lead', 'Recorder']);
-    assert.deepEqual(json.zones![0].questions[0].canSubmit, ['Team Lead']);
+    assert.deepEqual(json.zones![0].questions![0].canSubmit, ['Team Lead']);
   });
 
   it('does nothing when json has no zones', () => {
@@ -414,7 +414,7 @@ describe('cascadeRoleRenamesToZones', () => {
       { name: 'Recorder', origName: 'Recorder' },
     ]);
     assert.deepEqual(json.zones![0].canView, ['Manager', 'Recorder']);
-    assert.deepEqual(json.zones![0].questions[0].canSubmit, ['Manager']);
+    assert.deepEqual(json.zones![0].questions![0].canSubmit, ['Manager']);
   });
 });
 
