@@ -97,6 +97,15 @@ class PLTestResult(unittest.TestResult):
                     "points": 0,
                 })
                 Feedback.set_name("error")
+                # Student code runs once in setUpClass, so a non-syntax exception
+                # there fails the whole class and unittest skips every test method
+                # (TestSuite.run continues past tests when _classSetupFailed). Those
+                # tests would otherwise never get a result entry, so the grading
+                # panel hides them and the score denominator (get_total_points,
+                # which counts all test methods) no longer matches the entries
+                # shown. Record a 0-point entry for each remaining test so all
+                # tests appear and the score stays consistent (0 / total).
+                self._add_skipped_test_results()
             Feedback.add_feedback("".join(tr_list))
             Feedback.add_feedback("\n\nYour code:\n\n")
             print_student_code(
@@ -127,6 +136,34 @@ class PLTestResult(unittest.TestResult):
                 unittest.TestResult.addError(self, test, err)
                 self.results[-1]["points"] = 0
                 Feedback.add_feedback(self.error_message + tr_message)
+
+    def _add_skipped_test_results(self) -> None:
+        """
+        After student code fails to run, append a 0-point result for every test
+        method so all tests still appear in the grading panel with a consistent
+        score. Mirrors how get_total_points enumerates test methods.
+        """
+        test_cls = Feedback.test
+        methods = sorted(
+            (
+                (method_name, method)
+                for method_name, method in test_cls.__dict__.items()
+                if callable(method)
+                and hasattr(method, "__dict__")
+                and method_name.startswith("test_")
+            ),
+            key=lambda item: item[0],
+        )
+        for method_name, method in methods:
+            options = method.__dict__
+            self.results.append({
+                "name": options.get("name", method_name),
+                "filename": method_name,
+                "max_points": options.get("points", 1),
+                "points": 0,
+            })
+            Feedback.set_name(method_name)
+            Feedback.add_feedback(" - Not graded because your code failed to run - ")
 
     def addFailure(self, test: unittest.TestCase, err: Any) -> None:  # noqa: N802
         unittest.TestResult.addFailure(self, test, err)
