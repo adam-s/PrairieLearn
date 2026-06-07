@@ -341,3 +341,28 @@ def test_grade_grid_size_zero_still_rejects_far_off_answer() -> None:
     pl_drawing.grade(element_html, data)
 
     assert math.isclose(data["partial_scores"]["test"]["score"], 0.0)
+
+
+def test_answer_error_box_reflects_parent_grading_tol() -> None:
+    # Regression for the wider #15006 finding: the error box drawn on the correct
+    # answer must reflect the parent drawing's grading tolerance, not each
+    # sub-element's independent default (which otherwise defaults grid-size to 20,
+    # i.e. a +/-10px box regardless of how the question actually grades).
+    cases = [
+        ('grid-size="40"', 20.0),         # default_tol(40)=20 -> box +/-20
+        ('grid-size="20" tol="5"', 5.0),  # explicit parent tol=5 -> box +/-5
+        ('grid-size="0"', 10.0),          # default_tol(0)=10 (no grid) -> box +/-10
+    ]
+    for attrs, expected_half in cases:
+        html = (
+            f'<pl-drawing answers-name="test" gradable="true" {attrs}>'
+            '<pl-drawing-answer draw-error-box="true">'
+            '<pl-point x1="100" y1="100"></pl-point>'
+            '</pl-drawing-answer></pl-drawing>'
+        )
+        data = make_question_data()
+        pl_drawing.prepare(html, data)
+        box_half = data["correct_answers"]["test"][0]["widthErrorBox"] / 2
+        assert math.isclose(box_half, expected_half), (
+            f'{attrs}: drawn error box +/-{box_half}px != grading +/-{expected_half}px'
+        )
