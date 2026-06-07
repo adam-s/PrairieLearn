@@ -17,6 +17,7 @@ indexes
     users_uid_key: UNIQUE (uid) USING btree (uid)
     users_uin_institution_id_key: UNIQUE USING btree (uin, institution_id)
     users_institution_id_key: USING btree (institution_id)
+    users_lower_uid_idx: USING btree (lower(uid))
 
 foreign-key constraints
     users_institution_id_fkey: FOREIGN KEY (institution_id) REFERENCES institutions(id) ON UPDATE CASCADE ON DELETE SET NULL
