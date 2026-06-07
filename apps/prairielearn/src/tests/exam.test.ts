@@ -324,14 +324,18 @@ const partialCreditTests = [
       },
     },
     {
+      // A second grade with a *different* (non-improving) answer still records
+      // an attempt but awards no points. An *identical* re-submission would now
+      // be rejected as not gradable (issue #3120), so this case uses a distinct
+      // lower score to keep exercising the "no eligible increase" path.
       qid: 'partialCredit3',
       action: 'grade',
-      score: 63,
+      score: 50,
       sub_points: 0,
       stats: {
         first_submission_score: 0.63,
-        last_submission_score: 0.63,
-        submission_score_array: [0.63, 0.63],
+        last_submission_score: 0.5,
+        submission_score_array: [0.63, 0.5],
         incremental_submission_score_array: [0.63, 0],
         incremental_submission_points_array: [13 * 0.63, 0],
       },
@@ -344,7 +348,7 @@ const partialCreditTests = [
       stats: {
         first_submission_score: 0.63,
         last_submission_score: 0.64,
-        submission_score_array: [0.63, 0.63, 0.64],
+        submission_score_array: [0.63, 0.5, 0.64],
         incremental_submission_score_array: [0.63, 0, 0.64 - 0.63],
         incremental_submission_points_array: [13 * 0.63, 0, 8 * (0.64 - 0.63)],
       },
@@ -357,7 +361,7 @@ const partialCreditTests = [
       stats: {
         first_submission_score: 0.63,
         last_submission_score: 0.64,
-        submission_score_array: [0.63, 0.63, 0.64],
+        submission_score_array: [0.63, 0.5, 0.64],
         incremental_submission_score_array: [0.63, 0, 0.64 - 0.63],
         incremental_submission_points_array: [13 * 0.63, 0, 8 * (0.64 - 0.63)],
       },
@@ -370,7 +374,7 @@ const partialCreditTests = [
       stats: {
         first_submission_score: 0.63,
         last_submission_score: 0.07,
-        submission_score_array: [0.63, 0.63, 0.64, 0.07],
+        submission_score_array: [0.63, 0.5, 0.64, 0.07],
         incremental_submission_score_array: [0.63, 0, 0.64 - 0.63, 0],
         incremental_submission_points_array: [13 * 0.63, 0, 8 * (0.64 - 0.63), 0],
       },
@@ -384,7 +388,7 @@ const partialCreditTests = [
       stats: {
         first_submission_score: 0.63,
         last_submission_score: 0.97,
-        submission_score_array: [0.63, 0.63, 0.64, 0.07, 0.97],
+        submission_score_array: [0.63, 0.5, 0.64, 0.07, 0.97],
         incremental_submission_score_array: [0.63, 0, 0.64 - 0.63, 0, 0.97 - 0.64],
         incremental_submission_points_array: [
           13 * 0.63,
