@@ -146,16 +146,38 @@ export function GradingPanel({
           ? // Percentage-based grading is only suitable if the question has points
             html`
               <li class="list-group-item d-flex justify-content-center">
-                <span>Points</span>
-                <div class="form-check form-switch mx-2">
-                  <input
-                    class="form-check-input js-manual-grading-pts-perc-select"
-                    name="use_score_perc"
-                    id="use-score-perc"
-                    type="checkbox"
-                  />
-                  <label class="form-check-label" for="use-score-perc">Percentage</label>
-                </div>
+                <fieldset>
+                  <legend class="visually-hidden">Grade using points or percentage</legend>
+                  <div class="btn-group" role="group">
+                    <input
+                      class="btn-check js-manual-grading-pts-perc-select"
+                      data-pts-perc="points"
+                      id="use-score-pts-${context}"
+                      type="radio"
+                      name="pts_perc_select_${context}"
+                      autocomplete="off"
+                      checked
+                    />
+                    <label class="btn btn-sm btn-outline-secondary" for="use-score-pts-${context}">
+                      Points
+                    </label>
+                    <input
+                      class="btn-check js-manual-grading-pts-perc-select"
+                      data-pts-perc="percentage"
+                      name="use_score_perc"
+                      value="on"
+                      id="use-score-perc-${context}"
+                      type="radio"
+                      autocomplete="off"
+                    />
+                    <label
+                      class="btn btn-sm btn-outline-secondary"
+                      for="use-score-perc-${context}"
+                    >
+                      Percentage
+                    </label>
+                  </div>
+                </fieldset>
               </li>
             `
           : ''}
