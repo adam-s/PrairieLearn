@@ -24,6 +24,21 @@ math-field.read-only {
   border-radius: 4px;
 }
 
+/*
+ * MathLive's shadow DOM honors the OS dark-mode preference and darkens the
+ * "contains-highlight" (the shaded box around the field that holds the cursor).
+ * PrairieLearn is a light-themed app, so on a dark-mode OS that box turns dark
+ * grey while the math stays dark — illegible. Custom properties pierce the shadow
+ * boundary, so force the light value back with !important to beat MathLive's own
+ * @media (prefers-color-scheme: dark) :host rule.
+ * Refs: PrairieLearn/PrairieLearn#14766, https://github.com/arnog/mathlive/issues/2999
+ */
+@media (prefers-color-scheme: dark) {
+  math-field {
+    --contains-highlight-background-color: #edf2f7 !important;
+  }
+}
+
 .pl-symbolic-input-input {
   height: auto;
 }
