@@ -1940,9 +1940,6 @@ importers:
       '@prairielearn/postgres':
         specifier: workspace:^
         version: link:../postgres
-      fs-extra:
-        specifier: ^11.3.5
-        version: 11.3.5
       serialize-error:
         specifier: ^13.0.1
         version: 13.0.1
@@ -1953,9 +1950,6 @@ importers:
       '@prairielearn/tsconfig':
         specifier: workspace:^
         version: link:../tsconfig
-      '@types/fs-extra':
-        specifier: ^11.0.4
-        version: 11.0.4
       '@types/node':
         specifier: ^24.12.4
         version: 24.12.4
