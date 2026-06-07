@@ -21,7 +21,7 @@ import {
 } from '../lib/db-types.js';
 import type { ColorJson } from '../schemas/infoCourse.js';
 
-import { insertAuditEvent } from './audit-event.js';
+import { insertAuditEvents } from './audit-event.js';
 
 const sql = loadSqlEquiv(import.meta.url);
 
@@ -183,23 +183,26 @@ export async function addLabelToEnrollments({
 
     const enrollmentMap = new Map(enrollments.map((e) => [e.id, e]));
 
-    for (const result of results) {
-      const enrollment = enrollmentMap.get(result.enrollment_id);
-      assert(enrollment);
-      await insertAuditEvent({
-        tableName: 'student_label_enrollments',
-        action: 'insert',
-        actionDetail: 'enrollment_added',
-        rowId: result.id,
-        newRow: result,
-        subjectUserId: enrollment.user_id ?? null,
-        courseInstanceId: label.course_instance_id,
-        enrollmentId: result.enrollment_id,
-        agentUserId: authzData.user.id,
-        agentAuthnUserId: 'authn_user' in authzData ? authzData.authn_user.id : authzData.user.id,
-        context: { label_name: label.name },
-      });
-    }
+    await insertAuditEvents(
+      results.map((result) => {
+        const enrollment = enrollmentMap.get(result.enrollment_id);
+        assert(enrollment);
+        return {
+          tableName: 'student_label_enrollments',
+          action: 'insert',
+          actionDetail: 'enrollment_added',
+          rowId: result.id,
+          newRow: result,
+          subjectUserId: enrollment.user_id ?? null,
+          courseInstanceId: label.course_instance_id,
+          enrollmentId: result.enrollment_id,
+          agentUserId: authzData.user.id,
+          agentAuthnUserId:
+            'authn_user' in authzData ? authzData.authn_user.id : authzData.user.id,
+          context: { label_name: label.name },
+        };
+      }),
+    );
 
     return results;
   });
@@ -234,23 +237,26 @@ export async function removeLabelFromEnrollments({
 
     const enrollmentMap = new Map(enrollments.map((e) => [e.id, e]));
 
-    for (const deletedRow of deletedRows) {
-      const enrollment = enrollmentMap.get(deletedRow.enrollment_id);
-      assert(enrollment);
-      await insertAuditEvent({
-        tableName: 'student_label_enrollments',
-        action: 'delete',
-        actionDetail: 'enrollment_removed',
-        rowId: deletedRow.id,
-        oldRow: deletedRow,
-        subjectUserId: enrollment.user_id ?? null,
-        courseInstanceId: label.course_instance_id,
-        enrollmentId: deletedRow.enrollment_id,
-        agentUserId: authzData.user.id,
-        agentAuthnUserId: 'authn_user' in authzData ? authzData.authn_user.id : authzData.user.id,
-        context: { label_name: label.name },
-      });
-    }
+    await insertAuditEvents(
+      deletedRows.map((deletedRow) => {
+        const enrollment = enrollmentMap.get(deletedRow.enrollment_id);
+        assert(enrollment);
+        return {
+          tableName: 'student_label_enrollments',
+          action: 'delete',
+          actionDetail: 'enrollment_removed',
+          rowId: deletedRow.id,
+          oldRow: deletedRow,
+          subjectUserId: enrollment.user_id ?? null,
+          courseInstanceId: label.course_instance_id,
+          enrollmentId: deletedRow.enrollment_id,
+          agentUserId: authzData.user.id,
+          agentAuthnUserId:
+            'authn_user' in authzData ? authzData.authn_user.id : authzData.user.id,
+          context: { label_name: label.name },
+        };
+      }),
+    );
 
     return deletedRows;
   });

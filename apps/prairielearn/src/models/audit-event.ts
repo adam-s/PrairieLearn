@@ -77,7 +77,7 @@ export async function selectAuditEventsByInstitutionId({
   );
 }
 
-type InsertAuditEventParams = SupportedTableActionCombination & {
+export type InsertAuditEventParams = SupportedTableActionCombination & {
   action: EnumAuditEventAction;
   rowId: string;
   /** Most events should have an associated authenticated user */
@@ -128,6 +128,40 @@ type InsertAuditEventParams = SupportedTableActionCombination & {
  * @param params.assessmentQuestionId - ID of the affected assessment question
  */
 export async function insertAuditEvent(params: InsertAuditEventParams): Promise<AuditEvent> {
+  const resolvedParams = resolveAuditEventRow(params);
+  return await queryRow(sql.insert_audit_event, resolvedParams, AuditEventSchema);
+}
+
+/**
+ * Bulk version of {@link insertAuditEvent}. Inserts every event in a single
+ * `INSERT ... SELECT` instead of one round-trip per event, while applying the
+ * exact same validation and ID inference as the singular function. Events are
+ * inserted in input order; the returned rows are the inserted `audit_events`
+ * rows (order unspecified, as with any `RETURNING` clause).
+ */
+export async function insertAuditEvents(
+  paramsList: InsertAuditEventParams[],
+): Promise<AuditEvent[]> {
+  if (paramsList.length === 0) {
+    return [];
+  }
+
+  const rows = paramsList.map((params, index) => ({
+    // `ordinality` lets us preserve input order through `jsonb_to_recordset`.
+    ordinality: index,
+    ...resolveAuditEventRow(params),
+  }));
+
+  return await queryRows(sql.insert_audit_events, { events: JSON.stringify(rows) }, AuditEventSchema);
+}
+
+/**
+ * Resolves and validates a single set of audit-event params into the row shape
+ * expected by the `audit_events` table. Shared by {@link insertAuditEvent} (one
+ * row) and {@link insertAuditEvents} (many rows) so both perform identical
+ * validation and ID inference.
+ */
+function resolveAuditEventRow(params: InsertAuditEventParams) {
   const {
     action,
     actionDetail: action_detail,
@@ -243,5 +277,5 @@ export async function insertAuditEvent(params: InsertAuditEventParams): Promise<
     );
   }
 
-  return await queryRow(sql.insert_audit_event, resolvedParams, AuditEventSchema);
+  return resolvedParams;
 }
