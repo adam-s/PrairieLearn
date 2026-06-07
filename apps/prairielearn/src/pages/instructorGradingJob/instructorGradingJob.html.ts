@@ -97,7 +97,9 @@ export function InstructorGradingJob({
       ${gradingJobRow.grading_job.s3_bucket && gradingJobRow.grading_job.s3_root_key
         ? html`
             <div class="card mb-4">
-              <div class="card-header bg-primary text-white">Downloads</div>
+              <div class="card-header bg-primary text-white">
+                <h2>Downloads</h2>
+              </div>
               <div class="table-responsive">
                 <table class="table table-sm table-hover" aria-label="Grading job downloads">
                   <thead>
@@ -171,7 +173,9 @@ export function InstructorGradingJob({
         : ''}
 
       <div class="card mb-4">
-        <div class="card-header bg-primary text-white">Job Output</div>
+        <div class="card-header bg-primary text-white">
+          <h2>Job Output</h2>
+        </div>
         <div class="card-body">
           ${gradingJobRow.grading_job.s3_bucket && gradingJobRow.grading_job.s3_root_key
             ? html`
