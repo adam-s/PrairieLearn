@@ -6,7 +6,7 @@ import fs from 'fs-extra';
 import { afterAll, assert, beforeAll, describe, it, test } from 'vitest';
 
 import { config } from '../lib/config.js';
-import { EXAMPLE_COURSE_PATH, TEST_COURSE_PATH } from '../lib/paths.js';
+import { TEST_COURSE_PATH } from '../lib/paths.js';
 import { selectQuestionByQid } from '../models/question.js';
 import * as freeform from '../question-servers/freeform.js';
 import type { ElementExtensionNameDirMap } from '../question-servers/freeform.js';
@@ -16,7 +16,7 @@ import * as helperServer from './helperServer.js';
 
 describe('Course element extensions', { timeout: 60_000 }, function () {
   describe('Extensions can be loaded', function () {
-    const extDir = path.resolve(EXAMPLE_COURSE_PATH, 'elementExtensions');
+    const extDir = path.resolve(TEST_COURSE_PATH, 'elementExtensions');
     const element = 'extendable-element';
     const element_extensions = [
       'example-extension',
@@ -33,7 +33,7 @@ describe('Course element extensions', { timeout: 60_000 }, function () {
       );
     };
 
-    it('should correctly load extensions from example course', async () => {
+    it('should correctly load extensions from the test course', async () => {
       const extensions = await freeform.loadExtensions(extDir, extDir);
       check_ext(extensions);
     });
@@ -63,10 +63,8 @@ describe('Course element extensions', { timeout: 60_000 }, function () {
     });
 
     it("shouldn't fail when there are no extensions to load", async () => {
-      const extensions = await freeform.loadExtensions(
-        path.join(TEST_COURSE_PATH, 'elementExtensions'),
-        path.join(TEST_COURSE_PATH, 'elementExtensions'),
-      );
+      const noExtensionsDir = path.join(TEST_COURSE_PATH, 'nonexistentElementExtensions');
+      const extensions = await freeform.loadExtensions(noExtensionsDir, noExtensionsDir);
       assert.isEmpty(
         extensions,
         'non-zero number of extensions were loaded from a course without extensions',
@@ -75,7 +73,7 @@ describe('Course element extensions', { timeout: 60_000 }, function () {
   });
 
   describe('Extensions can insert client-side assets into the page', function () {
-    beforeAll(helperServer.before(EXAMPLE_COURSE_PATH));
+    beforeAll(helperServer.before(TEST_COURSE_PATH));
 
     afterAll(helperServer.after);
 
@@ -86,7 +84,7 @@ describe('Course element extensions', { timeout: 60_000 }, function () {
     locals.questionPreviewTabUrl = '/preview';
     locals.questionsUrl = locals.courseInstanceBaseUrl + '/questions';
     locals.isStudentPage = false;
-    const testQid = 'demo/custom/extension';
+    const testQid = 'customElementExtension';
 
     const incJs = 'extendable-element/extension-cssjs/extension-cssjs.js';
     const incCss = 'extendable-element/extension-cssjs/extension-cssjs.css';
@@ -95,7 +93,7 @@ describe('Course element extensions', { timeout: 60_000 }, function () {
     const incImg =
       'extendable-element/extension-clientfiles/clientFilesExtension/cat-2536662_640.jpg';
 
-    test.sequential('find the example question in the database', async () => {
+    test.sequential('find the question in the database', async () => {
       locals.question = await selectQuestionByQid({ qid: testQid, course_id: '1' });
     });
     test.sequential('check the question page for extension css and js files', async () => {

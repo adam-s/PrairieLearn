@@ -286,8 +286,7 @@ describe('chunks', () => {
         overwrite: true,
       });
 
-      // `testCourse` doesn't include an `elementExtensions` directory.
-      // We add one here for the sake of testing.
+      // Ensure an `elementExtensions` directory exists for the sake of testing.
       await fs.ensureDir(path.join(tempTestCourseDir.path, 'elementExtensions'));
 
       // We'll add a `serverFilesCourse` directory too.
