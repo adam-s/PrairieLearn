@@ -35,6 +35,42 @@ const ANSI_TRACEBACK =
   `  ${ESC}[1mFile "server.py", line 3, in prepare${ESC}[0m\n` +
   `${ESC}[1;31mException${ESC}[0m: ${ESC}[1mRequired attribute 'xyz' missing${ESC}[0m\n`;
 
+// A real-shaped traceback for an exception whose MESSAGE spans multiple lines —
+// e.g. a configuration/validation error that lists each problem on its own line.
+// This is exactly the shape the worker's Rich excepthook emits (captured live):
+// a `Traceback (most recent call last)` banner, Rich `path:line in fn` frame
+// headers with line-number-gutter source context, then the exception summary —
+// whose first line is `ExceptionType: <message line 1>` followed by the message's
+// continuation lines. The whole trailing block is the human-readable summary.
+const MULTILINE_TRACEBACK = [
+  'Traceback (most recent call last)',
+  'questions/matrixInput/server.py:24 in generate',
+  '  21 def generate(data):',
+  '  22     rows = data["params"]["rows"]',
+  '  23     cols = data["params"]["cols"]',
+  '❱ 24     raise ValueError(',
+  '  25         "Invalid configuration for \'pl-matrix-component-input\':\\n"',
+  "  26         \"  - 'rows' must be a positive integer\\n\"",
+  "  27         \"  - 'columns' must be a positive integer\"",
+  "ValueError: Invalid configuration for 'pl-matrix-component-input':",
+  "  - 'rows' must be a positive integer",
+  "  - 'columns' must be a positive integer",
+  '',
+].join('\n');
+
+// The red-team edge: a multi-line message whose own continuation line legitimately
+// begins with `File "`. The frame-region heuristic must not mistake that message
+// line for a traceback frame header and strip it.
+const MESSAGE_MENTIONS_FILE = [
+  'Traceback (most recent call last)',
+  'questions/loadConfig/server.py:12 in generate',
+  '  11 def generate(data):',
+  '❱ 12     raise FileNotFoundError(msg)',
+  'FileNotFoundError: could not load the question configuration:',
+  'File "config.yaml" does not exist in the question directory',
+  '',
+].join('\n');
+
 describe('extractPythonExceptionSummary', () => {
   it('returns the final exception summary line for a server.py error', () => {
     assert.equal(
@@ -55,6 +91,28 @@ describe('extractPythonExceptionSummary', () => {
     assert.equal(
       extractPythonExceptionSummary(ANSI_TRACEBACK),
       "Exception: Required attribute 'xyz' missing",
+    );
+  });
+
+  it('keeps the whole multi-line exception summary (type + every message line)', () => {
+    // Regression for the multi-line case: the summary spans several lines, so the
+    // headline must include the exception TYPE and the full message, not just the
+    // last continuation line.
+    assert.equal(
+      extractPythonExceptionSummary(MULTILINE_TRACEBACK),
+      "ValueError: Invalid configuration for 'pl-matrix-component-input':\n" +
+        "  - 'rows' must be a positive integer\n" +
+        "  - 'columns' must be a positive integer",
+    );
+  });
+
+  it('does not strip a message continuation that begins with `File "`', () => {
+    // A continuation line that legitimately starts with `File "` must stay part of
+    // the message — only true frame headers (`File "...", line N`) are scaffolding.
+    assert.equal(
+      extractPythonExceptionSummary(MESSAGE_MENTIONS_FILE),
+      'FileNotFoundError: could not load the question configuration:\n' +
+        'File "config.yaml" does not exist in the question directory',
     );
   });
 
@@ -88,6 +146,23 @@ describe('getInstructorErrorMessage', () => {
       "KeyError: 'answers-name'\n" +
         'Error occurred while processing element <pl-number-input answers-name="x">',
     );
+  });
+
+  it('surfaces the full multi-line exception message', () => {
+    const err = Object.assign(
+      new Error('CodeCallerNative child process exited unexpectedly, code = 1, signal = null'),
+      { data: { outputBoth: MULTILINE_TRACEBACK } },
+    );
+    const message = getInstructorErrorMessage(err);
+    assert.equal(
+      message,
+      "ValueError: Invalid configuration for 'pl-matrix-component-input':\n" +
+        "  - 'rows' must be a positive integer\n" +
+        "  - 'columns' must be a positive integer",
+    );
+    // The exception type and the first message line must not be dropped.
+    assert.include(message, 'ValueError:');
+    assert.include(message, "rows' must be a positive integer");
   });
 
   it('falls back to the provided fallback when no traceback is available', () => {
