@@ -11,6 +11,7 @@ import { contains } from '@prairielearn/path-utils';
 import { getRuntimeDirectoryForCourse } from './chunks.js';
 import { type Config } from './config.js';
 import type { Course, GradingJob, Question, Submission, Variant } from './db-types.js';
+import { ExternalGradingResultsSchema } from './externalGraderResultSchema.js';
 
 export interface Grader {
   handleGradingRequest(
@@ -134,10 +135,10 @@ export function makeGradingResult(jobId: string, rawData: Record<string, any> | 
       ? JSON.stringify(rawData)
       : rawData;
 
-  let data: Record<string, any>;
+  let rawJson: unknown;
   try {
     // replace NULL with unicode replacement character
-    data = JSON.parse(dataStr.replaceAll('\0', '\ufffd'));
+    rawJson = JSON.parse(dataStr.replaceAll('\0', '\ufffd'));
   } catch {
     return makeGradingFailureWithMessage(jobId, dataStr, 'Could not parse the grading results.');
   }
@@ -154,11 +155,26 @@ export function makeGradingResult(jobId: string, rawData: Record<string, any> | 
       return d;
     }
   }
-  data = replaceNull(data);
+  rawJson = replaceNull(rawJson);
 
-  if (typeof data.succeeded !== 'boolean') {
-    return makeGradingFailureWithMessage(jobId, data, "results did not contain 'succeeded' field.");
+  // Validate the envelope against the external-grader result contract. The
+  // schema is intentionally permissive (only `succeeded` is required; the inner
+  // `results` object passes unknown fields through), so this rejects only
+  // genuinely malformed grader output \u2014 e.g. a missing/non-boolean `succeeded`
+  // or a non-numeric `results.score` \u2014 with a clear, structured error, while
+  // accepting every shape a real grader legitimately produces.
+  const parsed = ExternalGradingResultsSchema.safeParse(rawJson);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('; ');
+    return makeGradingFailureWithMessage(
+      jobId,
+      rawJson,
+      `Grading results did not match the expected format: ${detail}`,
+    );
   }
+  const data = parsed.data;
 
   if (!data.succeeded) {
     return {
@@ -179,18 +195,7 @@ export function makeGradingResult(jobId: string, rawData: Record<string, any> | 
   }
 
   // Scores can be undefined/null (if the submission wasn't gradable) or a number.
-  let score = 0;
-  if (data.results.score != null) {
-    if (typeof data.results.score === 'number' && !Number.isNaN(data.results.score)) {
-      score = data.results.score;
-    } else {
-      return makeGradingFailureWithMessage(
-        jobId,
-        data,
-        `score "${data.results.score}" was not a number.`,
-      );
-    }
-  }
+  const score = data.results.score ?? 0;
 
   let format_errors: string[] = [];
   if (typeof data.results.format_errors === 'string') {
