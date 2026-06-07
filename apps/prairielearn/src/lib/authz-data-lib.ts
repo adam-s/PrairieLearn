@@ -97,6 +97,7 @@ export interface DangerousSystemAuthzData {
  */
 interface RawPlainAuthzData {
   user: User;
+  is_administrator: boolean;
 
   course_role: EnumCourseRole;
   has_course_permission_preview: boolean;
