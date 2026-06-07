@@ -68,4 +68,4 @@ SELECT
 FROM
   user_sessions
 WHERE
-  session_id = $session_id
+  key = $key

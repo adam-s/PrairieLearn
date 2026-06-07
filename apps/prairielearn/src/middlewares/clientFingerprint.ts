@@ -37,7 +37,7 @@ export default asyncHandler(async (req, res, next) => {
 export async function getClientFingerprintId(req: Request, res: Response) {
   const user_session_id = await sqldb.queryOptionalScalar(
     sql.select_user_session_id,
-    { session_id: req.session.id },
+    { key: req.session.id },
     IdSchema,
   );
 
