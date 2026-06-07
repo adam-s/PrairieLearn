@@ -1,12 +1,18 @@
 import { afterEach, assert, beforeEach, describe, expect, it } from 'vitest';
 
+import { type AuditEvent } from '../lib/db-types.js';
 import * as helperCourse from '../tests/helperCourse.js';
 import * as helperDb from '../tests/helperDb.js';
 import { getOrCreateUser } from '../tests/utils/auth.js';
 
 import { selectAssessmentQuestionById } from './assessment-question.js';
 import { selectAssessmentById } from './assessment.js';
-import { insertAuditEvent, selectAuditEvents } from './audit-event.js';
+import {
+  type InsertAuditEventParams,
+  insertAuditEvent,
+  insertAuditEvents,
+  selectAuditEvents,
+} from './audit-event.js';
 import { selectUserById } from './user.js';
 
 describe('audit-event', () => {
@@ -563,6 +569,159 @@ describe('audit-event', () => {
           "team_id": null,
         }
       `);
+    });
+  });
+
+  describe('insertAuditEvents', () => {
+    // Fields that are auto-generated per inserted row and therefore legitimately
+    // differ between the singular and batched paths (a fresh sequence id and an
+    // insertion timestamp). Everything else must be byte-identical.
+    const normalize = (event: AuditEvent) => {
+      const { id: _id, date: _date, ...rest } = event;
+      return rest;
+    };
+
+    it('returns an empty array for an empty list without inserting', async () => {
+      const result = await insertAuditEvents([]);
+      assert.deepEqual(result, []);
+
+      const all = await selectAuditEvents({
+        agent_authn_user_id: '1',
+        course_instance_id: '1',
+        table_names: ['users'],
+      });
+      assert.equal(all.length, 0);
+    });
+
+    it('writes exactly the same rows as N singular insertAuditEvent calls', async () => {
+      const user = await getOrCreateUser({
+        uid: 'batch@example.com',
+        name: 'Batch User',
+        uin: 'batch',
+        email: 'batch@example.com',
+      });
+      const assessment = await selectAssessmentById('1');
+      const assessmentQuestion = await selectAssessmentQuestionById('1');
+
+      // A heterogeneous batch that exercises every metadata LATERAL lookup that
+      // differs row-to-row: a plain user row, an assessment row (assessment ->
+      // course_instance -> course -> institution chain), an assessment-question
+      // row (its own chain), and an assessment_instances row whose id does not
+      // exist (no FK constraint) so the `coalesce(meta.id, e.assessment_instance_id)`
+      // special-case must preserve the raw id rather than null it out.
+      const paramsList: InsertAuditEventParams[] = [
+        {
+          action: 'insert',
+          tableName: 'users',
+          rowId: '1',
+          agentAuthnUserId: '1',
+          agentUserId: '1',
+          subjectUserId: user.id,
+          courseInstanceId: '1',
+          actionDetail: null,
+          newRow: await selectUserById('1'),
+          context: { batch: 'user' },
+        },
+        {
+          action: 'insert',
+          tableName: 'assessments',
+          rowId: '1',
+          agentAuthnUserId: '1',
+          agentUserId: '1',
+          subjectUserId: user.id,
+          assessmentId: assessment.id,
+          newRow: { title: 'Midterm 1' },
+          context: { batch: 'assessment' },
+        },
+        {
+          action: 'insert',
+          tableName: 'assessment_questions',
+          rowId: '1',
+          agentAuthnUserId: '1',
+          agentUserId: '1',
+          subjectUserId: user.id,
+          assessmentQuestionId: assessmentQuestion.id,
+          newRow: { status: 'active' },
+          context: { batch: 'assessment_question' },
+        },
+        {
+          action: 'insert',
+          tableName: 'assessment_instances',
+          rowId: '999999',
+          agentAuthnUserId: '1',
+          agentUserId: '1',
+          subjectUserId: user.id,
+          // A non-existent assessment_instance_id (no FK constraint): the
+          // coalesce must keep this value rather than null it out.
+          assessmentInstanceId: '999999',
+          newRow: { points: 0 },
+          context: { batch: 'assessment_instance' },
+        },
+      ];
+
+      // Path A: one batched insert.
+      const batched = await insertAuditEvents(paramsList);
+      assert.equal(batched.length, paramsList.length);
+
+      // Path B: N singular inserts of the identical params.
+      const singular: AuditEvent[] = [];
+      for (const params of paramsList) {
+        singular.push(await insertAuditEvent(params));
+      }
+
+      // The batched rows must equal the singular rows one-for-one (input order),
+      // ignoring only the auto-generated id + date.
+      assert.equal(batched.length, singular.length);
+      for (let i = 0; i < paramsList.length; i++) {
+        assert.deepEqual(
+          normalize(batched[i]),
+          normalize(singular[i]),
+          `row ${i} (${paramsList[i].tableName}/${paramsList[i].action}) differs between batched and singular`,
+        );
+      }
+
+      // The coalesce special-case actually preserved the hard-deleted id.
+      assert.equal(batched[3].assessment_instance_id, '999999');
+      // And the inferred chains resolved (not left null) for the assessment row.
+      assert.equal(batched[1].course_id, '1');
+      assert.equal(batched[1].institution_id, '1');
+      assert.equal(batched[1].assessment_id, '1');
+    });
+
+    it('inserts every event in input order and persists them', async () => {
+      const user = await getOrCreateUser({
+        uid: 'order@example.com',
+        name: 'Order User',
+        uin: 'order',
+        email: 'order@example.com',
+      });
+
+      const paramsList: InsertAuditEventParams[] = [0, 1, 2].map((n) => ({
+        action: 'insert' as const,
+        tableName: 'users' as const,
+        rowId: '1',
+        agentAuthnUserId: '1',
+        agentUserId: '1',
+        subjectUserId: user.id,
+        courseInstanceId: '1',
+        actionDetail: null,
+        newRow: { name: `Row ${n}` },
+        context: { order: n },
+      }));
+
+      const inserted = await insertAuditEvents(paramsList);
+      assert.deepEqual(
+        inserted.map((e) => e.context),
+        [{ order: 0 }, { order: 1 }, { order: 2 }],
+      );
+
+      // All three landed in the DB.
+      const persisted = await selectAuditEvents({
+        subject_user_id: user.id,
+        table_names: ['users'],
+        course_instance_id: '1',
+      });
+      assert.equal(persisted.length, 3);
     });
   });
 });
