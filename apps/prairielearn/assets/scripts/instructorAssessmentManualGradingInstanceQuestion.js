@@ -5,6 +5,26 @@ import { mathjaxTypeset } from '../../src/lib/client/mathjax.js';
 $(() => {
   resetInstructorGradingPanel();
 
+  // On initial page load, move focus to the manual score input in the active
+  // grading panel so a grader can start typing immediately without first
+  // clicking the field. Scoped to `.js-main-grading-panel` (the editable
+  // panel, not the read-only "existing"/"conflicting" copies). We focus the
+  // first input that is both enabled and actually visible, so this no-ops for
+  // view-only graders (disabled inputs) and when the points field is hidden
+  // (e.g. a rubric drives the score). The points and percentage variants are
+  // mutually exclusive — the toggle hides one with `display:none` — so the
+  // visibility check (`offsetParent`) selects whichever one the grader sees.
+  // (We can't rely on selector order here: a comma selector matches in DOM
+  // order, and the points input precedes the percentage input in the markup.)
+  const scoreInput = [
+    ...(document
+      .querySelector('.js-main-grading-panel')
+      ?.querySelectorAll(
+        '.js-manual-score-value-input-points:not(:disabled), .js-manual-score-value-input-percentage:not(:disabled)',
+      ) ?? []),
+  ].find((input) => input instanceof HTMLElement && input.offsetParent !== null);
+  if (scoreInput instanceof HTMLElement) scoreInput.focus();
+
   document.addEventListener('keypress', (event) => {
     // Ignore holding down the key events
     if (event.repeat) return;
