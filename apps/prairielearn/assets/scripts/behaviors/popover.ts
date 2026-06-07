@@ -144,4 +144,18 @@ onDocumentReady(() => {
     const popover = window.bootstrap.Popover.getInstance(event.target as HTMLElement);
     if (popover) openPopovers.delete(popover);
   });
+
+  // A popover trigger inside a collapsible (e.g. a rubric item explanation in the
+  // student feedback panel) keeps its popover open when the collapsible is hidden:
+  // Bootstrap hides the trigger but leaves the popover element (appended to <body>)
+  // floating with no anchor. Close any open popover whose trigger lives inside the
+  // collapsing container.
+  document.addEventListener('hide.bs.collapse', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    target.querySelectorAll<HTMLElement>('[data-bs-toggle="popover"]').forEach((trigger) => {
+      window.bootstrap.Popover.getInstance(trigger)?.hide();
+    });
+  });
 });
