@@ -41,6 +41,18 @@ def get_answer_name(file_name: str) -> str:
     )
 
 
+def add_format_error(
+    answer_name: str, data: pl.QuestionData, error_string: str
+) -> None:
+    # Record the error under both the "_files" key (shown in the submission panel)
+    # and the element's answer_name (shown beside this input in the question panel).
+    pl.add_files_format_error(data, error_string)
+
+    if answer_name not in data["format_errors"]:
+        data["format_errors"][answer_name] = []
+    data["format_errors"][answer_name].append(error_string)
+
+
 def element_inner_html(element: lxml.html.HtmlElement) -> str:
     return (element.text or "") + "".join([
         str(lxml.html.tostring(c), "utf-8") for c in element.iterchildren()
@@ -234,6 +246,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             "footer_enabled": counter != Counter.NONE
             or min_wc is not None
             or max_wc is not None,
+            "parse_error": "<br>".join(data["format_errors"].get(answer_name, [])),
         }
 
         if submitted_file:
@@ -281,14 +294,15 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
     # Get submitted answer or return parse_error if it does not exist
     file_contents = data["submitted_answers"].get(answer_name, "")
     if not file_contents and not allow_blank:
-        pl.add_files_format_error(data, f"No submitted answer for {file_name}")
+        add_format_error(answer_name, data, f"No submitted answer for {file_name}")
         return
 
     # Validate format before persisting; reject malformed base64/UTF-8
     try:
         word_count = count_words_from_html_base64(file_contents)
     except (binascii.Error, UnicodeDecodeError):
-        pl.add_files_format_error(
+        add_format_error(
+            answer_name,
             data,
             f"Failed to decode submission for {file_name}. The file may be corrupted or invalid.",
         )
@@ -310,15 +324,18 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
     # If content exists, enforce min/max word count
     if file_contents and (min_wc is not None or max_wc is not None):
         if min_wc is not None and word_count < min_wc:
-            pl.add_files_format_error(
+            add_format_error(
+                answer_name,
                 data,
                 f"{file_name} is too short: {word_count} words (minimum {min_wc}).",
             )
             return
 
         if max_wc is not None and word_count > max_wc:
-            pl.add_files_format_error(
-                data, f"{file_name} is too long: {word_count} words (maximum {max_wc})."
+            add_format_error(
+                answer_name,
+                data,
+                f"{file_name} is too long: {word_count} words (maximum {max_wc}).",
             )
             return
 
