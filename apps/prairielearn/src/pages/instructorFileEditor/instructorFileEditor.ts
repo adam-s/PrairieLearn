@@ -149,11 +149,15 @@ router.get(
 
           // Note that if using git, we pull before we push, so a failed save
           // still syncs whatever was pulled from the remote repository (with
-          // the edit's changes discarded). We ignore that case in the UI.
+          // the edit's changes discarded). A push failure is surfaced to the
+          // user as a `push_failed` outcome (see `getSyncAlert`).
           draftEdit.outcome = classifyEditOutcome(draftEdit.jobSequence.jobs[0].data);
         }
 
-        const editWasSaved = draftEdit.outcome != null && draftEdit.outcome !== 'save_failed';
+        const editWasSaved =
+          draftEdit.outcome != null &&
+          draftEdit.outcome !== 'save_failed' &&
+          draftEdit.outcome !== 'push_failed';
         if (!editWasSaved && draftEdit.hash !== editorData.diskHash) {
           // There is a recently saved draft that was not written to disk and that differs from what is on disk.
           draftEdit.alertChoice = true;
