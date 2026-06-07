@@ -173,6 +173,52 @@ describe('Assessment syncing', () => {
     assert.equal(syncedData.assessment_questions[1].question.qid, util.ALTERNATIVE_QUESTION_ID);
   });
 
+  it('syncs a zone with an empty questions list', async () => {
+    const courseData = util.getCourseData();
+    const assessment = makeAssessment(courseData);
+    assessment.zones?.push({
+      title: 'empty zone',
+      questions: [],
+    });
+    assessment.zones?.push({
+      title: 'zone with a question',
+      questions: [{ id: util.QUESTION_ID, points: 5 }],
+    });
+    courseData.courseInstances[util.COURSE_INSTANCE_ID].assessments['emptyzone'] = assessment;
+    await util.writeAndSyncCourseData(courseData);
+
+    const syncedAssessment = await findSyncedAssessment('emptyzone');
+    assert.isNull(syncedAssessment.sync_errors);
+
+    const syncedData = await getSyncedAssessmentData('emptyzone');
+    assert.lengthOf(syncedData.zones, 2);
+    assert.equal(syncedData.zones[0].title, 'empty zone');
+    assert.equal(syncedData.zones[1].title, 'zone with a question');
+    // The empty zone contributes no alternative groups or questions, but the
+    // zone with a question still syncs normally.
+    assert.lengthOf(syncedData.alternative_groups, 1);
+    assert.lengthOf(syncedData.assessment_questions, 1);
+    assert.equal(syncedData.assessment_questions[0].question.qid, util.QUESTION_ID);
+  });
+
+  it('syncs a zone that omits the questions property entirely', async () => {
+    const courseData = util.getCourseData();
+    const assessment = makeAssessment(courseData);
+    // A zone with only a title and no `questions` key at all. This is the
+    // "sketch out sections first" workflow from the issue.
+    assessment.zones?.push({ title: 'a section I want to include' });
+    courseData.courseInstances[util.COURSE_INSTANCE_ID].assessments['titleonlyzone'] = assessment;
+    await util.writeAndSyncCourseData(courseData);
+
+    const syncedAssessment = await findSyncedAssessment('titleonlyzone');
+    assert.isNull(syncedAssessment.sync_errors);
+
+    const syncedData = await getSyncedAssessmentData('titleonlyzone');
+    assert.lengthOf(syncedData.zones, 1);
+    assert.equal(syncedData.zones[0].title, 'a section I want to include');
+    assert.lengthOf(syncedData.assessment_questions, 0);
+  });
+
   it('defaults shuffleQuestions to true for an Exam-type assessment', async () => {
     const courseData = util.getCourseData();
     const assessment = makeAssessment(courseData, 'Exam');
@@ -641,7 +687,7 @@ describe('Assessment syncing', () => {
     );
     assert.ok(originalSecondSyncedAssessmentQuestion);
 
-    const removedQuestion = assessment.zones[0].questions.shift();
+    const removedQuestion = assessment.zones[0].questions!.shift();
     if (!removedQuestion) throw new Error('removedQuestion is null');
     await util.overwriteAndSyncCourseData(courseData, courseDir);
     syncedData = await getSyncedAssessmentData('newexam');
@@ -651,7 +697,7 @@ describe('Assessment syncing', () => {
     assert.isOk(deletedFirstSyncedAssessmentQuestion);
     assert.isNotNull(deletedFirstSyncedAssessmentQuestion.deleted_at);
 
-    assessment.zones[0].questions.push(removedQuestion);
+    assessment.zones[0].questions!.push(removedQuestion);
     await util.overwriteAndSyncCourseData(courseData, courseDir);
     syncedData = await getSyncedAssessmentData('newexam');
 

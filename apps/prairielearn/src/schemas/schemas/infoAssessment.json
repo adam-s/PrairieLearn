@@ -729,7 +729,7 @@
           "description": "If true, students must explicitly acknowledge advancing past this point. All questions in previous zones become read-only after crossing."
         },
         "questions": {
-          "minItems": 1,
+          "default": [],
           "type": "array",
           "items": {
             "$ref": "#/definitions/ZoneQuestionBlockJsonSchema"
@@ -788,8 +788,7 @@
           },
           "description": "Tools available for questions in this zone. Overrides assessment-level tools."
         }
-      },
-      "required": ["questions"]
+      }
     },
     "ZoneQuestionBlockJsonSchema": {
       "type": "object",

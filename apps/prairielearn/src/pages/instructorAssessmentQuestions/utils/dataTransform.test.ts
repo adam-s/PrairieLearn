@@ -157,8 +157,8 @@ describe('serializeZonesForJson', () => {
     const serialized = serializeZonesForJson(parsedZones);
     expect(serialized[0].canView).toEqual(['Manager', 'Recorder']);
     expect(serialized[0].canSubmit).toEqual(['Recorder']);
-    expect(serialized[0].questions[0].canView).toEqual(['Reflector']);
-    expect(serialized[0].questions[0].canSubmit).toEqual(['Reflector']);
+    expect(serialized[0].questions![0].canView).toEqual(['Reflector']);
+    expect(serialized[0].questions![0].canSubmit).toEqual(['Reflector']);
   });
 
   it('strips explicitly empty canView/canSubmit arrays on questions to inherit from zone', () => {
@@ -172,8 +172,8 @@ describe('serializeZonesForJson', () => {
     ];
 
     const serialized = serializeZonesForJson(parsedZones);
-    expect(serialized[0].questions[0].canView).toBeUndefined();
-    expect(serialized[0].questions[0].canSubmit).toBeUndefined();
+    expect(serialized[0].questions![0].canView).toBeUndefined();
+    expect(serialized[0].questions![0].canSubmit).toBeUndefined();
   });
 
   it('strips explicitly empty canView/canSubmit arrays on zones to inherit from assessment', () => {
@@ -206,8 +206,8 @@ describe('serializeZonesForJson', () => {
     ];
 
     const serialized = serializeZonesForJson(parsedZones);
-    expect(serialized[0].questions[0].canView).toBeUndefined();
-    expect(serialized[0].questions[0].canSubmit).toBeUndefined();
+    expect(serialized[0].questions![0].canView).toBeUndefined();
+    expect(serialized[0].questions![0].canSubmit).toBeUndefined();
   });
 });
 
@@ -788,7 +788,7 @@ describe('serializeZonesForJson preferences', () => {
     ];
 
     const serialized = serializeZonesForJson(parsedZones);
-    expect(serialized[0].questions[0].preferences).toEqual({
+    expect(serialized[0].questions![0].preferences).toEqual({
       gravitational_constant: 9.8,
       fired_object: 'cannon ball',
     });
@@ -810,7 +810,7 @@ describe('serializeZonesForJson preferences', () => {
     ];
 
     const serialized = serializeZonesForJson(parsedZones);
-    const alts = serialized[0].questions[0].alternatives!;
+    const alts = serialized[0].questions![0].alternatives!;
     expect(alts[0].preferences).toEqual({ mode: 'hard' });
     expect(alts[1].preferences).toEqual({ mode: 'easy' });
   });
@@ -823,7 +823,7 @@ describe('serializeZonesForJson preferences', () => {
     ];
 
     const serialized = serializeZonesForJson(parsedZones);
-    expect(serialized[0].questions[0]).not.toHaveProperty('preferences');
+    expect(serialized[0].questions![0]).not.toHaveProperty('preferences');
   });
 });
 

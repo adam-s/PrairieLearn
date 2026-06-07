@@ -161,7 +161,7 @@ export function cascadeRoleRenamesToZones(
   for (const zone of json.zones ?? []) {
     zone.canView = rewrite(zone.canView);
     zone.canSubmit = rewrite(zone.canSubmit);
-    for (const q of zone.questions) {
+    for (const q of zone.questions ?? []) {
       q.canView = rewrite(q.canView);
       q.canSubmit = rewrite(q.canSubmit);
     }

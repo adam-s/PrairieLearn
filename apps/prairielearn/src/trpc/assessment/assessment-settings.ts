@@ -135,8 +135,9 @@ function* iterateAssessmentBlocks(info: AssessmentJsonInput): Generator<Assessme
     const zone = zones[zoneIndex];
     const zoneTitle = zone.title ?? null;
     yield { block: zone, location: { kind: 'zone', zoneIndex, zoneTitle } };
-    for (let questionIndex = 0; questionIndex < zone.questions.length; questionIndex++) {
-      const question = zone.questions[questionIndex];
+    const questions = zone.questions ?? [];
+    for (let questionIndex = 0; questionIndex < questions.length; questionIndex++) {
+      const question = questions[questionIndex];
       const qid = question.id ?? null;
       yield {
         block: question,

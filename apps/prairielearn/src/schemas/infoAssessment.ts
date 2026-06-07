@@ -363,8 +363,9 @@ export const ZoneAssessmentJsonSchema = z.object({
     .default(false),
   questions: z
     .array(ZoneQuestionBlockJsonSchema)
-    .min(1)
-    .describe('Array of questions in the zone.'),
+    .describe('Array of questions in the zone.')
+    .optional()
+    .default([]),
   advanceScorePerc: AdvanceScorePercJsonSchema.optional(),
   gradeRateMinutes: z
     .number()
