@@ -105,7 +105,7 @@ describe('submission ownership under an effective user (issue #4264)', { timeout
         z.object({
           user_id: IdSchema.nullable(),
           authn_user_id: IdSchema.nullable(),
-          true_answer: z.record(z.any()).nullable(),
+          true_answer: z.record(z.string(), z.any()).nullable(),
         }),
       );
       const trueAnswer = variant.true_answer as { c: number };
