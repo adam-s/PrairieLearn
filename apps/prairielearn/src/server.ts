@@ -1904,10 +1904,12 @@ export async function initExpress(): Promise<Express> {
     },
     (await import('./middlewares/authzPublicCourseOrInstance.js')).default,
   ]);
-  app.use(
-    '/pl/public/course_instance/:course_instance_id(\\d+)/assessments',
+  app.use('/pl/public/course_instance/:course_instance_id(\\d+)/assessments', [
+    // Listing a course instance's assessments exposes course-instance-level
+    // content, so it requires the course instance itself to be publicly shared.
+    (await import('./middlewares/ensurePublicCourseInstanceSharing.js')).default,
     (await import('./pages/publicAssessments/publicAssessments.js')).default,
-  );
+  ]);
   app.use(/^(\/pl\/public\/course_instance\/[0-9]+\/assessment\/[0-9]+)\/?$/, (req, res, _next) => {
     res.redirect(`${req.params[0]}/questions`);
   });

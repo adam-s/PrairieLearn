@@ -1206,6 +1206,51 @@ describe('Question Sharing', { timeout: 60_000 }, function () {
     );
 
     test.sequential(
+      'Access a publicly shared assessment whose course instance is NOT publicly shared',
+      async () => {
+        // Regression test for the bug where a publicly shared assessment 404s when
+        // its course instance is private. An assessment can be shared publicly
+        // without sharing the whole course instance; the assessment questions page
+        // must remain accessible, while the course-instance-level assessments list
+        // must stay private.
+        sharingCourseData.courseInstances['Fa19'].courseInstance.shareSourcePublicly = false;
+        await fs.writeJSON(
+          path.join(courseRepo.courseLiveDir, 'courseInstances/Fa19/infoCourseInstance.json'),
+          sharingCourseData.courseInstances['Fa19'].courseInstance,
+        );
+        const syncResult = await syncFromDisk.syncOrCreateDiskToSql(sharingCourse.path, logger);
+        assert(syncResult.status === 'complete' && !syncResult.hadJsonErrorsOrWarnings);
+
+        const sharedAssessmentId = (
+          await selectAssessmentByTid({
+            tid: 'test',
+            course_instance_id: sharingCourseInstanceId,
+          })
+        ).id;
+
+        // The publicly shared assessment's questions page is still accessible.
+        const assessmentUrl = `${baseUrl}/public/course_instance/${sharingCourseInstanceId}/assessment/${sharedAssessmentId}/questions`;
+        const assessmentPage = await fetchCheerio(assessmentUrl);
+        assert(assessmentPage.ok);
+
+        // The course-instance-level assessments list stays private (the CI is not
+        // publicly shared), so it must 404.
+        const assessmentsListUrl = `${baseUrl}/public/course_instance/${sharingCourseInstanceId}/assessments`;
+        const assessmentsListPage = await fetchCheerio(assessmentsListUrl);
+        assert.equal(assessmentsListPage.status, 404);
+
+        // Restore the shared state for subsequent tests.
+        sharingCourseData.courseInstances['Fa19'].courseInstance.shareSourcePublicly = true;
+        await fs.writeJSON(
+          path.join(courseRepo.courseLiveDir, 'courseInstances/Fa19/infoCourseInstance.json'),
+          sharingCourseData.courseInstances['Fa19'].courseInstance,
+        );
+        const restoreResult = await syncFromDisk.syncOrCreateDiskToSql(sharingCourse.path, logger);
+        assert(restoreResult.status === 'complete' && !restoreResult.hadJsonErrorsOrWarnings);
+      },
+    );
+
+    test.sequential(
       'Try adding a draft question to a sharing set, ensure sync error is created',
       async () => {
         sharingCourseData.questions[DRAFT_QUESTION_QID].sharingSets = [SHARING_SET_NAME];
