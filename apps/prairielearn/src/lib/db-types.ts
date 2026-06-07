@@ -1411,14 +1411,6 @@ export const QuestionAuthorSchema = z.object({
   question_id: IdSchema,
 });
 
-export const QuestionGenerationContextEmbeddingSchema = z.object({
-  chunk_id: z.string(),
-  doc_path: z.string(),
-  doc_text: z.string(),
-  embedding: z.string(),
-  id: IdSchema,
-});
-
 export const QuestionSchema = z.object({
   client_files: z.array(z.string()).nullable(),
   course_id: IdSchema,
@@ -1859,7 +1851,6 @@ export const TableNames = [
   'plan_grants',
   'query_runs',
   'question_authors',
-  'question_generation_context_embeddings',
   'question_score_logs',
   'question_tags',
   'questions',

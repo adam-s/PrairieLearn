@@ -189,13 +189,8 @@ export function AdministratorSettings({
               <div class="card-body">
                 <form method="POST">
                   <input type="hidden" name="__csrf_token" value="${resLocals.__csrf_token}" />
-                  <button class="btn btn-primary" name="__action" value="sync_context_documents">
-                    Resync context documents
-                  </button>
-
                   ${config.devMode
                     ? html`
-                        <hr />
                         <p>
                           Benchmarking the AI will generate questions from a set of sample prompts
                           and ask an LLM to evaluate their quality, including comparing them to gold
