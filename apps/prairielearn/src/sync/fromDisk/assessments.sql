@@ -26,7 +26,9 @@ SELECT
   q.qid,
   q.id,
   c.sharing_name,
-  q.preferences_schema
+  q.preferences_schema,
+  q.share_publicly,
+  q.share_source_publicly
 FROM
   questions AS q
   JOIN sharing_set_questions AS ssq ON q.id = ssq.question_id
@@ -46,7 +48,9 @@ SELECT
   q.qid,
   q.id,
   c.sharing_name,
-  q.preferences_schema
+  q.preferences_schema,
+  q.share_publicly,
+  q.share_source_publicly
 FROM
   questions AS q
   JOIN courses AS c ON c.id = q.course_id

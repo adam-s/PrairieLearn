@@ -793,13 +793,22 @@ export async function validateAssessmentSharedQuestions(
         qid: z.string(),
         id: IdSchema,
         preferences_schema: QuestionPreferencesSchemaJsonSchema.nullable(),
+        share_publicly: z.boolean(),
+        share_source_publicly: z.boolean(),
       }),
     );
     const sharedQuestionPreferences: Record<string, QuestionPreferencesSchemaJson | null> = {};
+    // Imported questions that are publicly accessible (and so may appear in a
+    // publicly shared assessment). A question reachable only via a sharing set is
+    // not public and would 404 for a public viewer of the assessment.
+    const publicImportedQids = new Set<string>();
     for (const row of importedQuestions) {
       const fullQid = '@' + row.sharing_name + '/' + row.qid;
       questionIds[fullQid] = row.id;
       sharedQuestionPreferences[fullQid] = row.preferences_schema;
+      if (row.share_publicly || row.share_source_publicly) {
+        publicImportedQids.add(fullQid);
+      }
     }
     const missingQids = new Set(Array.from(importedQids).filter((qid) => !(qid in questionIds)));
     if (config.checkSharingOnSync) {
@@ -812,6 +821,22 @@ export async function validateAssessmentSharedQuestions(
               ...assessmentMissingQids,
             ].join(', ')}`,
           );
+        }
+
+        // A publicly shared assessment may only import questions that are
+        // themselves publicly shared. Same-course questions are validated in
+        // `checkInvalidSharedAssessments`, which can only see questions in the
+        // course being synced; cross-course imports must be checked here.
+        if (assessments[tid].data?.shareSourcePublicly) {
+          const nonPublicImportedQids = qids.filter(
+            (qid) => !missingQids.has(qid) && !publicImportedQids.has(qid),
+          );
+          if (nonPublicImportedQids.length > 0) {
+            infofile.addError(
+              assessments[tid],
+              'Assessment is publicly shared but contains questions which are not publicly shared',
+            );
+          }
         }
       }
     }
