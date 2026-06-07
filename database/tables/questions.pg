@@ -18,13 +18,13 @@ columns
     json_workspace_comment: jsonb
     number: integer
     options: jsonb
-    partial_credit: boolean default true
+    partial_credit: boolean not null default true
     preferences_schema: jsonb
     qid: text
     share_publicly: boolean not null default false
     share_source_publicly: boolean not null default false
-    show_correct_answer: boolean default true
-    single_variant: boolean default false
+    show_correct_answer: boolean not null default true
+    single_variant: boolean not null default false
     sync_errors: text
     sync_job_sequence_id: bigint
     sync_warnings: text
