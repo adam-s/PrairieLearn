@@ -1,5 +1,15 @@
 .pl-external-grader-results .card-title {
   font-weight: 700;
+  /* Allow this flex item to shrink below its content's intrinsic width so a long,
+     unbreakable test name can wrap instead of pushing past the card border. */
+  min-width: 0;
+}
+
+/* The test name is itself a flex item; it also needs min-width: 0 so the long word can
+   break (overflow-wrap is already inherited from Bootstrap's .card). */
+.pl-external-grader-results .card-title .test-name {
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .pl-external-grader-results .card-header .fa-angle-down {
