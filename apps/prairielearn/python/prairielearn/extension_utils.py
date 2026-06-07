@@ -9,6 +9,7 @@ import collections
 import importlib.util
 import os
 import re
+import warnings
 from collections import namedtuple
 from collections.abc import Callable
 from types import ModuleType
@@ -114,7 +115,28 @@ def load_host_script(script_name: str) -> ModuleType:
 
     Returns:
         The imported module
+
+    Raises:
+        ModuleNotFoundError: If neither the requested module nor its snake_case
+            fallback can be imported.
     """
     # Chop off the file extension because it's unnecessary here
     script_name = script_name.removesuffix(".py")
-    return __import__(script_name)
+    try:
+        return __import__(script_name)
+    except ModuleNotFoundError:
+        # Backwards compatibility: element controller filenames are migrating
+        # from kebab-case to snake_case so that they can be imported directly in
+        # tests. Extensions that still request the old kebab-case name (e.g.
+        # `pl.load_host_script("pl-code.py")`) should keep working by falling
+        # back to the snake_case module.
+        snake_name = script_name.replace("-", "_")
+        if snake_name == script_name:
+            raise
+        warnings.warn(
+            f'load_host_script("{script_name}") is deprecated; the host element '
+            f'controller has been renamed, so use "{snake_name}" instead.',
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return __import__(snake_name)

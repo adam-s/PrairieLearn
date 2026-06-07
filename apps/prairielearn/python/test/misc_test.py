@@ -4,6 +4,7 @@ import json
 import math
 import string
 import time
+import warnings
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
@@ -1365,6 +1366,49 @@ def test_load_host_script() -> None:
     # Verify the loaded module has expected attributes
     assert script.sample_function() == "Hello from dummy extension"
     assert script.SAMPLE_CONSTANT == 42
+
+
+def test_load_host_script_kebab_case_fallback() -> None:
+    """A request for the old kebab-case controller name still resolves.
+
+    Element controller filenames are migrating from kebab-case to snake_case so
+    they can be imported directly in tests. Extensions that still request the
+    old kebab-case name via ``load_host_script`` must keep working, falling back
+    to the snake_case module and emitting a ``DeprecationWarning``.
+    """
+    # `dummy-extension` is not a valid module name, so the direct import fails
+    # and the fallback resolves it to the snake_case `dummy_extension` module.
+    with pytest.warns(DeprecationWarning, match="dummy_extension"):
+        script = pl.load_host_script("dummy-extension.py")
+
+    # The fallback returns the same snake_case module as the direct load.
+    assert script.sample_function() == "Hello from dummy extension"
+    assert script.SAMPLE_CONSTANT == 42
+
+
+def test_load_host_script_missing_dashed_still_raises() -> None:
+    """A genuinely-missing dashed name still raises ``ModuleNotFoundError``.
+
+    The kebab->snake fallback must not mask real import errors: when neither the
+    requested name nor its snake_case form exists, the import error propagates.
+    """
+    with pytest.raises(ModuleNotFoundError):
+        pl.load_host_script("definitely-not-a-real-host-element")
+
+
+def test_load_host_script_missing_undashed_preserves_error() -> None:
+    """A missing name with no dash re-raises the original error untouched.
+
+    The ``snake_name == script_name`` guard means undashed names get the exact
+    pre-shim behavior: the original ``ModuleNotFoundError`` is re-raised with no
+    spurious ``DeprecationWarning`` (nothing was renamed, so nothing to suggest).
+    """
+    with warnings.catch_warnings():
+        # Turn any DeprecationWarning into an error: an undashed missing name
+        # must not trigger the rename-suggestion warning at all.
+        warnings.simplefilter("error", DeprecationWarning)
+        with pytest.raises(ModuleNotFoundError):
+            pl.load_host_script("definitely_not_a_real_host_element")
 
 
 def test_add_submitted_file(question_data: pl.QuestionData) -> None:
