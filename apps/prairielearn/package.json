@@ -50,6 +50,7 @@
     "@prairielearn/cache": "workspace:^",
     "@prairielearn/compiled-assets": "workspace:^",
     "@prairielearn/config": "workspace:^",
+    "@prairielearn/crypto": "workspace:^",
     "@prairielearn/csv": "workspace:^",
     "@prairielearn/docker-utils": "workspace:^",
     "@prairielearn/error": "workspace:^",

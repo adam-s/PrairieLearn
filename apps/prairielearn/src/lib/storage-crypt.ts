@@ -1,5 +1,6 @@
+import { decrypt, encrypt } from '@prairielearn/crypto';
+
 import { config } from './config.js';
-import { decrypt, encrypt } from './symmetric-crypto.js';
 
 /**
  * Encrypt plaintext for storage (in the database or elsewhere).
