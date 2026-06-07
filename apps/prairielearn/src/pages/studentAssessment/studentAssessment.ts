@@ -105,7 +105,30 @@ router.get(
     const groupConfig = await getGroupConfig(res.locals.assessment.id);
 
     // Check whether the user is currently in a group in the current assessment by trying to get a group_id
-    const groupId = await getGroupId(res.locals.assessment.id, res.locals.user.id);
+    let groupId = await getGroupId(res.locals.assessment.id, res.locals.user.id);
+
+    // When course staff use "Student view without access restrictions" (an
+    // effective student who still holds instructor permissions), they are not
+    // subject to the student group-join rules: rather than being shown the
+    // join/create gate (or the dead-end "wait to be assigned" message when
+    // students cannot self-organize), place them in a singleton temporary group
+    // so they can preview the assessment. Staff who are already in a group keep
+    // it, exactly like a student.
+    if (
+      groupId === null &&
+      (res.locals.authz_data.has_course_instance_permission_view ||
+        res.locals.authz_data.has_course_permission_preview)
+    ) {
+      const group = await createGroup({
+        course_instance: res.locals.course_instance,
+        assessment: res.locals.assessment,
+        group_name: null,
+        uids: [res.locals.user.uid],
+        authn_user_id: res.locals.authn_user.id,
+        authzData: res.locals.authz_data,
+      });
+      groupId = group.id;
+    }
 
     const groupInfo = groupId === null ? null : await getGroupInfo(groupId, groupConfig);
     const userCanAssignRoles =
