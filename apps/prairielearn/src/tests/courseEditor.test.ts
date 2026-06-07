@@ -743,6 +743,59 @@ function testEdit(params: EditData) {
   });
 }
 
+describe('Copy a publicly-shared but soft-deleted course instance', { timeout: 20_000 }, () => {
+  // Regression for https://github.com/PrairieLearn/PrairieLearn/issues/13700:
+  // the public course-instance copy handler fetched the source course instance
+  // with selectOptionalCourseInstanceById, which does not filter `deleted_at`,
+  // so a soft-deleted course instance that still had `share_source_publicly`
+  // set could be copied. The sibling public-question copy path already rejects
+  // deleted rows.
+  beforeAll(async () => {
+    courseRepo = await createCourseRepoFixture(courseTemplateDir);
+    await helperServer.before(courseRepo.courseLiveDir)();
+    await updateCourseRepository({ courseId: '1', repository: courseRepo.courseOriginDir });
+    await features.enable('question-sharing');
+    config.checkSharingOnSync = true;
+    await createSharedCourse();
+    await updateCourseSharingName({ course_id: '2', sharing_name: 'test-course' });
+
+    // Soft-delete the publicly-shared source course instance (id 2 = SHARING 101 / Fa19).
+    await sqldb.execute(
+      'UPDATE course_instances SET deleted_at = now() WHERE id = $course_instance_id',
+      { course_instance_id: 2 },
+    );
+  });
+
+  afterAll(async () => {
+    config.checkSharingOnSync = false;
+    await helperServer.after();
+  });
+
+  it('returns 404 instead of copying the deleted course instance', async () => {
+    const csrfToken = generateCsrfToken({
+      url: '/pl/course/1/copy_public_course_instance',
+      authnUserId: '1',
+    });
+    const res = await fetch(`${siteUrl}/pl/course/1/copy_public_course_instance`, {
+      method: 'POST',
+      body: new URLSearchParams({
+        __csrf_token: csrfToken,
+        __action: 'copy_course_instance',
+        course_instance_id: '2',
+        start_date: '',
+        end_date: '',
+        self_enrollment_enabled: '',
+        self_enrollment_use_enrollment_code: '',
+      }),
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+    });
+    assert.equal(res.status, 404);
+  });
+});
+
 async function createSharedCourse() {
   const PUBLICLY_SHARED_QUESTION_QID = 'shared-publicly';
   const PUBLICLY_SHARED_SOURCE_QUESTION_QID = 'shared-source-publicly';
