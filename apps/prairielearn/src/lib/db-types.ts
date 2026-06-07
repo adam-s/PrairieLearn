@@ -923,8 +923,6 @@ export const FileEditSchema = z.object({
   course_id: IdSchema,
   created_at: DateFromISOString,
   deleted_at: DateFromISOString.nullable(),
-  did_save: z.boolean().nullable(),
-  did_sync: z.boolean().nullable(),
   dir_name: z.string(),
   file_id: IdSchema.nullable(),
   file_name: z.string(),

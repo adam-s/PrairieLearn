@@ -1,0 +1,3 @@
+ALTER TABLE file_edits
+DROP COLUMN IF EXISTS did_save,
+DROP COLUMN IF EXISTS did_sync;
