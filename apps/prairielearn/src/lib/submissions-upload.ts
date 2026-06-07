@@ -294,6 +294,9 @@ export async function uploadSubmissions(
           sql.insert_submission,
           {
             variant_id,
+            // The submission's owning user, matching the variant's `user_id`
+            // (NULL for group/team submissions).
+            user_id: entity.type === 'user' ? entity.user_id : null,
             authn_user_id,
             submitted_answer: row['Submitted answer'],
             params: row.Params,
