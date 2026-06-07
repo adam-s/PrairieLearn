@@ -102,10 +102,10 @@ describe('Creating a question', () => {
 
     assert.equal(createQuestionResponse.status, 200);
 
-    assert.equal(
-      createQuestionResponse.url,
-      `${siteUrl}/pl/course_instance/1/instructor/question/3/preview`,
-    );
+    // The preview pins the variant, so the landing URL gains a `variant_id`.
+    const createdUrl = new URL(createQuestionResponse.url);
+    assert.equal(createdUrl.pathname, '/pl/course_instance/1/instructor/question/3/preview');
+    assert.match(createdUrl.searchParams.get('variant_id') ?? '', /^\d+$/);
   });
 
   test.sequential('verify that the new question has the correct info', async () => {
@@ -225,10 +225,10 @@ describe('Creating a question', () => {
 
     assert.equal(createQuestionResponse.status, 200);
 
-    assert.equal(
-      createQuestionResponse.url,
-      `${siteUrl}/pl/course_instance/1/instructor/question/5/preview`,
-    );
+    // The preview pins the variant, so the landing URL gains a `variant_id`.
+    const createdUrl = new URL(createQuestionResponse.url);
+    assert.equal(createdUrl.pathname, '/pl/course_instance/1/instructor/question/5/preview');
+    assert.match(createdUrl.searchParams.get('variant_id') ?? '', /^\d+$/);
   });
 
   test.sequential('verify that the new question has the correct info', async () => {

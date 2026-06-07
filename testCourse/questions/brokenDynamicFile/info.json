@@ -1,0 +1,6 @@
+{
+  "uuid": "33f87148-1e31-4462-9614-939cad788df5",
+  "title": "Dynamic file() that raises (issue 805 repro)",
+  "topic": "Test",
+  "type": "v3"
+}
