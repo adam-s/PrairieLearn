@@ -25,8 +25,14 @@ function MissingCourseSharingNameCard({ courseId }: { courseId: string }) {
 /**
  * Middleware to authorize access to public course or course instance routes.
  * Checks if the course or course instance exists, if question sharing is enabled,
- * if the course has a sharing name, and if the course instance is shared publicly
- * (if applicable).
+ * and if the course has a sharing name.
+ *
+ * Note that this does NOT require the course instance itself to be publicly
+ * shared: an individual assessment can be shared publicly without sharing its
+ * entire course instance, and those assessment pages enforce their own
+ * per-assessment sharing check. Routes that expose course-instance-level content
+ * (e.g. the list of assessments) additionally apply
+ * `ensurePublicCourseInstanceSharing`.
  *
  * If authorization fails, responds with a 404 Not Found error.
  *
@@ -65,10 +71,6 @@ export default typedAsyncHandler<'public-course' | 'public-course-instance'>(
     });
 
     if (!questionSharingEnabled) {
-      throw new HttpStatusError(404, 'Not Found');
-    }
-
-    if (course_instance && !course_instance.share_source_publicly) {
       throw new HttpStatusError(404, 'Not Found');
     }
 
