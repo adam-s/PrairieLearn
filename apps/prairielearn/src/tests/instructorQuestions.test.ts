@@ -11,6 +11,7 @@ import { idsEqual } from '../lib/id.js';
 import { selectUserByUid } from '../models/user.js';
 import { createCourseTrpcClient } from '../trpc/course/client.js';
 
+import { fetchCheerio } from './helperClient.js';
 import {
   testElementClientFiles,
   testFileDownloads,
@@ -160,6 +161,26 @@ describe('Instructor questions', { timeout: 60_000 }, function () {
     testQuestionPreviews(previewPageInfo, addNumbers, addVectors);
     testFileDownloads(previewPageInfo, downloadFile, true);
     testElementClientFiles(previewPageInfo, customElement);
+  });
+
+  describe('README hide-state persistence', function () {
+    // The README card carries a per-question `data-storage-key` so the client
+    // (collapsible-card behavior) can persist its collapsed state across reloads
+    // and new variants. addNumbers ships a README.md, so its card renders.
+    it('exposes a per-question storage key on the README card', async () => {
+      const questions = await sqldb.queryRows(sql.select_questions, QuestionSchema);
+      const readmeQuestion = questions.find((q) => q.directory === 'addNumbers');
+      assert.isDefined(readmeQuestion);
+
+      const res = await fetchCheerio(
+        `${courseInstanceBaseUrl}/question/${readmeQuestion.id}/preview`,
+      );
+      assert.equal(res.status, 200);
+
+      const readmeCard = res.$('.js-readme-card');
+      assert.lengthOf(readmeCard, 1);
+      assert.equal(readmeCard.attr('data-storage-key'), `readme-collapsed-${readmeQuestion.id}`);
+    });
   });
 
   describe('QID redirect routes', () => {
