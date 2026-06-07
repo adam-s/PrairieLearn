@@ -22,6 +22,39 @@ const vec2pt = function (v) {
 const mechanicsObjects = {};
 
 /**
+ * Compute where a vector's text label should be drawn so it never overlaps the
+ * shaft, in any direction (issue #4690).
+ *
+ * The label is anchored at the arrow head (`obj.left/top` is the tail, `dx/dy` is
+ * the head displacement) and must grow *outward*, away from the tail. With fabric's
+ * default top-left origin the box always grows down-and-to-the-right, which lands
+ * the label back on top of the shaft whenever the head points left or up
+ * (cos/sin(angle) < 0). We instead anchor the bounding-box corner that faces the
+ * head and push `offsetx/offsety` outward along each axis. For right/down-pointing
+ * heads (the previously-working cases) this is identical to the old placement, so
+ * existing labels do not move.
+ *
+ * Pure function (no fabric/canvas dependency) so it can be unit-tested directly.
+ *
+ * @param {{left:number, top:number, offsetx:number, offsety:number}} obj
+ * @param {number} dx head x-displacement from the tail (obj.width * cos(angle))
+ * @param {number} dy head y-displacement from the tail (obj.width * sin(angle))
+ * @returns {{left:number, top:number, originX:'left'|'right', originY:'top'|'bottom'}}
+ */
+mechanicsObjects.vectorLabelPosition = function (obj, dx, dy) {
+  const headLeft = obj.left + dx;
+  const headTop = obj.top + dy;
+  const sx = dx < 0 ? -1 : 1;
+  const sy = dy < 0 ? -1 : 1;
+  return {
+    left: headLeft + sx * obj.offsetx,
+    top: headTop + sy * obj.offsety,
+    originX: sx < 0 ? 'right' : 'left',
+    originY: sy < 0 ? 'bottom' : 'top',
+  };
+};
+
+/**
  * New object types.
  * These are all classes that create and return the object, but don't add it to the canvas.
  * These are helper functions/classes for the actual canvas adding functions below.
@@ -2993,11 +3026,20 @@ mechanicsObjects.byType['pl-vector'] = class extends PLDrawingBaseElement {
     const angle_rad = (Math.PI * obj.angle) / 180;
     const dx = obj.width * Math.cos(angle_rad);
     const dy = obj.width * Math.sin(angle_rad);
+    // Place the label clear of the shaft in every direction. The label is anchored
+    // at the arrow head and must grow *outward* (away from the tail); otherwise the
+    // box grows back over the shaft when the head points left/up (issue #4690). We
+    // pick the bounding-box corner facing the head as the origin and push the offset
+    // outward along each axis. For right/down-pointing heads this is identical to the
+    // old top-left placement, so existing labels are unchanged.
+    const labelPos = mechanicsObjects.vectorLabelPosition(obj, dx, dy);
     let textObj = null;
     if (obj.label) {
       textObj = new mechanicsObjects.LatexText(obj.label, {
-        left: obj.left + dx + obj.offsetx,
-        top: obj.top + dy + obj.offsety,
+        left: labelPos.left,
+        top: labelPos.top,
+        originX: labelPos.originX,
+        originY: labelPos.originY,
         fontSize: 20,
         textAlign: 'left',
         selectable: false,
@@ -3009,8 +3051,9 @@ mechanicsObjects.byType['pl-vector'] = class extends PLDrawingBaseElement {
       submittedAnswer.registerAnswerObject(options, obj);
       obj.on('moving', () => {
         if (textObj) {
-          textObj.left = obj.left + dx + obj.offsetx;
-          textObj.top = obj.top + dy + obj.offsety;
+          const p = mechanicsObjects.vectorLabelPosition(obj, dx, dy);
+          textObj.left = p.left;
+          textObj.top = p.top;
         }
       });
     }
@@ -3226,11 +3269,16 @@ mechanicsObjects.byType['pl-double-headed-vector'] = class extends PLDrawingBase
     const angle_rad = (Math.PI * obj.angle) / 180;
     const dx = obj.width * Math.cos(angle_rad);
     const dy = obj.width * Math.sin(angle_rad);
+    // Same label placement as pl-vector: anchor at the head and grow outward so the
+    // label never crosses the shaft when the head points left/up (issue #4690).
+    const labelPos = mechanicsObjects.vectorLabelPosition(obj, dx, dy);
     let textObj = null;
     if (obj.label) {
       textObj = new mechanicsObjects.LatexText(obj.label, {
-        left: obj.left + dx + obj.offsetx,
-        top: obj.top + dy + obj.offsety,
+        left: labelPos.left,
+        top: labelPos.top,
+        originX: labelPos.originX,
+        originY: labelPos.originY,
         fontSize: 20,
         textAlign: 'left',
         selectable: false,
@@ -3242,8 +3290,9 @@ mechanicsObjects.byType['pl-double-headed-vector'] = class extends PLDrawingBase
       submittedAnswer.registerAnswerObject(options, obj);
       obj.on('moving', () => {
         if (textObj) {
-          textObj.left = obj.left + dx + obj.offsetx;
-          textObj.top = obj.top + dy + obj.offsety;
+          const p = mechanicsObjects.vectorLabelPosition(obj, dx, dy);
+          textObj.left = p.left;
+          textObj.top = p.top;
         }
       });
     }
