@@ -18,7 +18,7 @@ import { reportIssueFromForm } from '../../lib/issues.js';
 import { getAndRenderVariant, renderPanelsForSubmission } from '../../lib/question-render.js';
 import type { ResLocalsQuestionRender } from '../../lib/question-render.types.js';
 import { processSubmission } from '../../lib/question-submission.js';
-import { getQuestionCourse } from '../../lib/question-variant.js';
+import { ensureVariant, getQuestionCourse } from '../../lib/question-variant.js';
 import { typedAsyncHandler } from '../../lib/res-locals.js';
 import { getSearchParams } from '../../lib/url.js';
 import { logPageView } from '../../middlewares/logPageView.js';
@@ -59,7 +59,40 @@ router.get(
 
     const variant_seed = req.query.variant_seed ? z.string().parse(req.query.variant_seed) : null;
     const variant_id = req.query.variant_id ? IdSchema.parse(req.query.variant_id) : null;
-    // req.query.variant_id might be undefined, which will generate a new variant
+
+    // If the request didn't specify a variant, create one and redirect to the
+    // same page with it pinned via `variant_id`. This way, refreshing the page
+    // re-renders the *same* variant instead of generating a new one, so errors
+    // recorded against the variant (e.g. from a failing `file()`) remain
+    // visible. To get a fresh variant the user clicks "New variant".
+    // See https://github.com/PrairieLearn/PrairieLearn/issues/805.
+    if (variant_id == null) {
+      const question_course = await getQuestionCourse(res.locals.question, res.locals.course);
+      const variant = await ensureVariant({
+        question_id: res.locals.question.id,
+        instance_question_id: null,
+        user_id: res.locals.user.id,
+        authn_user_id: res.locals.authn_user.id,
+        course_instance: res.locals.course_instance ?? null,
+        variant_course: res.locals.course,
+        question_course,
+        options: { variant_seed },
+        require_open: false,
+        client_fingerprint_id: res.locals.client_fingerprint_id ?? null,
+      });
+      const redirectSearchParams = getSearchParams(req);
+      redirectSearchParams.set('variant_id', variant.id.toString());
+      // The variant now exists, so the seed is no longer needed.
+      redirectSearchParams.delete('variant_seed');
+      res.redirect(
+        url.format({
+          pathname: `${res.locals.urlPrefix}/question/${res.locals.question.id}/preview`,
+          search: redirectSearchParams.toString(),
+        }),
+      );
+      return;
+    }
+
     await getAndRenderVariant(variant_id, variant_seed, res.locals, { questionRenderContext });
     await logPageView('instructorQuestionPreview', req, res);
     const questionCopyTargets = await getQuestionCopyTargets({

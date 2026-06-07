@@ -166,19 +166,22 @@ describe('Instructor questions', { timeout: 60_000 }, function () {
     it('redirects to the correct question from course route', async () => {
       const res = await fetch(`${questionsUrlCourse}/qid/addNumbers?variant_seed=1234`);
       assert.equal(res.status, 200);
-      assert.equal(
-        res.url,
-        `${baseUrl}/course/1/question/${addNumbers.id}/preview?variant_seed=1234`,
-      );
+      // The preview pins the variant: the `variant_seed` is consumed to create a
+      // variant and the final URL carries that variant's `variant_id` instead.
+      const finalUrl = new URL(res.url);
+      assert.equal(finalUrl.pathname, `/pl/course/1/question/${addNumbers.id}/preview`);
+      assert.match(finalUrl.searchParams.get('variant_id') ?? '', /^\d+$/);
     });
 
     it('redirects to the correct question from instance route', async () => {
       const res = await fetch(`${questionsUrl}/qid/addNumbers?variant_seed=1234`);
       assert.equal(res.status, 200);
+      const finalUrl = new URL(res.url);
       assert.equal(
-        res.url,
-        `${baseUrl}/course_instance/1/instructor/question/${addNumbers.id}/preview?variant_seed=1234`,
+        finalUrl.pathname,
+        `/pl/course_instance/1/instructor/question/${addNumbers.id}/preview`,
       );
+      assert.match(finalUrl.searchParams.get('variant_id') ?? '', /^\d+$/);
     });
   });
 });
