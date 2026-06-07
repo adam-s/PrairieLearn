@@ -3,7 +3,7 @@ import * as path from 'path';
 import { Ajv, type JSONSchemaType } from 'ajv';
 import * as async from 'async';
 import betterAjvErrors from 'better-ajv-errors';
-import { isAfter, isFuture, isPast, isValid, parseISO } from 'date-fns';
+import { isAfter, isBefore, isFuture, isPast, isValid, parseISO } from 'date-fns';
 import { isEmptyObject } from 'es-toolkit';
 import fs from 'fs-extra';
 import jju from 'jju';
@@ -269,10 +269,15 @@ export async function loadFullCourse(
         ? undefined
         : new Set(courseInstance.data.studentLabels?.map((label) => label.name));
 
+    // Effective access window of the course instance, used to warn when an
+    // assessment's access range falls outside it.
+    const courseInstanceAccessRange = getCourseInstanceAccessRange(courseInstance.data);
+
     const assessments = await loadAssessments({
       coursePath,
       courseInstanceDirectory,
       courseInstanceExpired,
+      courseInstanceAccessRange,
       questions,
       sharingEnabled,
       validStudentLabelNames,
@@ -998,6 +1003,149 @@ function checkAllowAccessDates(rule: { startDate?: string | null; endDate?: stri
 }
 
 /**
+ * Represents an effective access window. A `null` bound means "unbounded" in
+ * that direction: a `null` start permits access arbitrarily far in the past, and
+ * a `null` end permits access arbitrarily far in the future. This matches the
+ * semantics of `allowAccess`/`publishing`, where an omitted `startDate`/`endDate`
+ * places no bound on that side.
+ */
+interface AccessRange {
+  start: Date | null;
+  end: Date | null;
+}
+
+/** The date-bearing subset of an `allowAccess`/`publishing` rule. */
+interface DateBoundRule {
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+/**
+ * Computes the effective access window of a course instance from its date-based
+ * access configuration. Access can be granted by either legacy `allowAccess`
+ * rules or by modern `publishing` dates (the two are mutually exclusive, which is
+ * validated elsewhere).
+ *
+ * For `allowAccess`, access is permitted if *any* rule is satisfied, so the
+ * effective window is the union of all rules: the earliest `startDate` and the
+ * latest `endDate`. Any rule with an omitted `startDate` makes the window
+ * unbounded on the left, and any rule with an omitted `endDate` makes it
+ * unbounded on the right.
+ *
+ * Returns `null` when the course instance has no date-based access configuration
+ * (neither `allowAccess` rules nor `publishing` dates), in which case there is no
+ * meaningful range to compare an assessment against. Invalid dates are ignored
+ * here; they are reported separately by `checkAllowAccessDates`/course instance
+ * validation.
+ */
+function getCourseInstanceAccessRange(
+  courseInstance:
+    | { allowAccess?: DateBoundRule[] | null; publishing?: DateBoundRule | null }
+    | null
+    | undefined,
+): AccessRange | null {
+  if (courseInstance == null) return null;
+
+  const allowAccessRules = courseInstance.allowAccess;
+  if (allowAccessRules != null) {
+    if (allowAccessRules.length === 0) return null;
+
+    // The union is unbounded on a side as soon as any rule omits that bound;
+    // once unbounded, a later finite date must not re-narrow it.
+    let start: Date | null = null;
+    let end: Date | null = null;
+    let startUnbounded = false;
+    let endUnbounded = false;
+    for (const rule of allowAccessRules) {
+      // An omitted bound makes the union unbounded on that side.
+      if (rule.startDate == null) {
+        startUnbounded = true;
+        start = null;
+      } else if (!startUnbounded) {
+        const parsed = parseJsonDate(rule.startDate);
+        // Skip invalid dates; they are reported as errors elsewhere. The union
+        // takes the earliest start across all rules.
+        if (parsed != null && (start == null || isBefore(parsed, start))) {
+          start = parsed;
+        }
+      }
+      if (rule.endDate == null) {
+        endUnbounded = true;
+        end = null;
+      } else if (!endUnbounded) {
+        const parsed = parseJsonDate(rule.endDate);
+        // The union takes the latest end across all rules.
+        if (parsed != null && (end == null || isAfter(parsed, end))) {
+          end = parsed;
+        }
+      }
+    }
+    return { start, end };
+  }
+
+  const publishing = courseInstance.publishing;
+  if (publishing != null && (publishing.startDate != null || publishing.endDate != null)) {
+    return {
+      start: publishing.startDate != null ? parseJsonDate(publishing.startDate) : null,
+      end: publishing.endDate != null ? parseJsonDate(publishing.endDate) : null,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Warns when an assessment's `allowAccess` date range falls (partly) outside its
+ * course instance's access window. Because students can only reach an assessment
+ * while the course instance itself is accessible, an assessment that explicitly
+ * opens before the course instance opens, or explicitly closes after it closes,
+ * is almost always a misconfiguration.
+ *
+ * To avoid spurious warnings, we only compare bounds that are *explicitly* set on
+ * both sides. An assessment rule that omits a `startDate`/`endDate` is commonly
+ * intended to defer to the course instance ("from the start of the course",
+ * "until the course ends"), so an omitted assessment bound is never treated as
+ * exceeding the course instance.
+ *
+ * Only legacy `allowAccess` rules are checked: modern `accessControl` rules use
+ * release/due-date semantics that do not map cleanly onto a single "accessible"
+ * window, so comparing them would risk spurious warnings.
+ */
+function checkAssessmentAccessWithinCourseInstance(
+  assessmentAllowAccess: DateBoundRule[] | null | undefined,
+  courseInstanceRange: AccessRange | null,
+): string[] {
+  const warnings: string[] = [];
+
+  // Nothing to compare against if the course instance has no date bounds.
+  if (courseInstanceRange == null) return warnings;
+  const { start: ciStart, end: ciEnd } = courseInstanceRange;
+  // A fully unbounded course instance can never be exceeded.
+  if (ciStart == null && ciEnd == null) return warnings;
+
+  const outside = (assessmentAllowAccess ?? []).some((rule) => {
+    const ruleStart = rule.startDate != null ? parseJsonDate(rule.startDate) : null;
+    const ruleEnd = rule.endDate != null ? parseJsonDate(rule.endDate) : null;
+
+    // Only compare explicit, valid assessment bounds against bounded course
+    // instance edges. Omitted/invalid assessment dates are not flagged.
+    const startsBefore = ciStart != null && ruleStart != null && isBefore(ruleStart, ciStart);
+    const endsAfter = ciEnd != null && ruleEnd != null && isAfter(ruleEnd, ciEnd);
+
+    return startsBefore || endsAfter;
+  });
+
+  if (outside) {
+    warnings.push(
+      'Assessment access rule date range is outside the course instance access date range. ' +
+        'Students will be unable to access the assessment outside the course instance dates.',
+    );
+  }
+
+  return warnings;
+}
+
+/**
  * It seems to be relatively common for instructors to accidentally put multiple
  * UIDs in the same string, like "uid1@example.com, uid2@example.com". While we
  * are pretty loose in what we accept as UIDs, they should never contain commas or
@@ -1148,6 +1296,7 @@ function validateAssessment({
   questions,
   sharingEnabled,
   courseInstanceExpired,
+  courseInstanceAccessRange,
   validStudentLabelNames,
 }: {
   assessment: AssessmentJson;
@@ -1155,6 +1304,7 @@ function validateAssessment({
   questions: Record<string, InfoFile<QuestionJson>>;
   sharingEnabled: boolean;
   courseInstanceExpired: boolean;
+  courseInstanceAccessRange: AccessRange | null;
   validStudentLabelNames?: Set<string>;
 }): { warnings: string[]; errors: string[] } {
   const warnings: string[] = [];
@@ -1259,6 +1409,16 @@ function validateAssessment({
         warnings.push('Invalid allowAccess rule: examUuid is required with "mode": "Exam"');
       }
     });
+
+    // Warn if the assessment's access date range extends outside the course
+    // instance's access date range, which usually indicates a misconfiguration:
+    // students can never reach the assessment outside the course instance dates.
+    warnings.push(
+      ...checkAssessmentAccessWithinCourseInstance(
+        assessment.allowAccess,
+        courseInstanceAccessRange,
+      ),
+    );
   }
 
   const foundQids = new Set<string>();
@@ -1894,6 +2054,7 @@ async function loadAssessments({
   coursePath,
   courseInstanceDirectory,
   courseInstanceExpired,
+  courseInstanceAccessRange,
   questions,
   sharingEnabled,
   validStudentLabelNames,
@@ -1901,6 +2062,7 @@ async function loadAssessments({
   coursePath: string;
   courseInstanceDirectory: string;
   courseInstanceExpired: boolean;
+  courseInstanceAccessRange: AccessRange | null;
   questions: Record<string, InfoFile<QuestionJson>>;
   sharingEnabled: boolean;
   validStudentLabelNames?: Set<string>;
@@ -1919,6 +2081,7 @@ async function loadAssessments({
         questions,
         sharingEnabled,
         courseInstanceExpired,
+        courseInstanceAccessRange,
         validStudentLabelNames,
       }),
     recursive: true,
