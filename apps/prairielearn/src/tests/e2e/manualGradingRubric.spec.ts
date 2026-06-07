@@ -170,4 +170,112 @@ test.describe('Manual grading rubric submission panel update', () => {
         .first(),
     ).toBeVisible();
   });
+
+  test('rubric item explanation popover is dismissed when the student collapses the feedback panel', async ({
+    page,
+    baseURL,
+    courseInstance,
+  }) => {
+    // Regression test for https://github.com/PrairieLearn/PrairieLearn/issues/10399:
+    // a rubric item's (i) explanation popover stayed open (orphaned) after the
+    // student collapsed the "Feedback from the Course Staff" panel that contained it.
+
+    // Student submits, tagging the question for manual grading.
+    await page.context().addCookies([
+      { name: 'pl2_requested_uid', value: STUDENT.uid, url: baseURL },
+      { name: 'pl2_requested_data_changed', value: 'true', url: baseURL },
+    ]);
+
+    await page.goto(`/pl/course_instance/${courseInstance.id}/assessments`);
+    await page.getByRole('link', { name: 'Homework for Internal, External, Manual' }).click();
+    await page
+      .getByRole('link', { name: 'Manual Grading: Fibonacci function, file upload' })
+      .click();
+
+    const csrfToken = await page.locator('form input[name="__csrf_token"]').first().inputValue();
+    const variantId = await page.locator('form input[name="__variant_id"]').first().inputValue();
+    const fileUploadName = await page
+      .locator('input[name^="_file_upload"]')
+      .first()
+      .getAttribute('name');
+    await page.request.post(page.url(), {
+      form: {
+        __csrf_token: csrfToken,
+        __variant_id: variantId,
+        __action: 'save',
+        [fileUploadName!]: JSON.stringify([
+          { name: 'fib.py', contents: Buffer.from('def fib(n): return n').toString('base64') },
+        ]),
+      },
+    });
+
+    await page.context().clearCookies();
+
+    // Instructor builds a rubric item WITH an explanation, then applies it.
+    const iqId = await sqldb.queryScalar(
+      sql.select_instance_question_for_manual_grading,
+      { assessment_id: assessmentId, qid: 'manualGrade/codeUpload' },
+      IdSchema,
+    );
+    const manualGradingIQUrl = `/pl/course_instance/${courseInstance.id}/instructor/assessment/${assessmentId}/manual_grading/instance_question/${iqId}`;
+    await page.goto(manualGradingIQUrl);
+
+    await page.locator('[aria-label="Toggle rubric settings"]').click();
+    await expect(page.locator('#rubric-setting')).toBeVisible();
+
+    const rubricTable = page.locator('#rubric-editor table[aria-label="Rubric items"] tbody');
+    const firstRow = await addRubricItem(page, rubricTable);
+    await firstRow.getByRole('spinbutton', { name: 'Points' }).fill('6');
+    await firstRow
+      .getByRole('textbox', { name: 'Description' })
+      .fill('Full credit for correct solution');
+    await firstRow
+      .getByRole('textbox', { name: 'Explanation' })
+      .fill('Your function correctly returns the nth Fibonacci number.');
+
+    await page.locator('#rubric-setting').getByRole('button', { name: 'Save' }).click();
+    await expect(
+      page.locator('.js-main-grading-panel .js-selectable-rubric-item').first(),
+    ).toBeVisible({ timeout: 10000 });
+
+    await page.locator('.js-selectable-rubric-item').first().check();
+    await page.locator('#grade-button').click();
+    await page.waitForLoadState('load');
+
+    // Student views the graded question.
+    await page.context().addCookies([
+      { name: 'pl2_requested_uid', value: STUDENT.uid, url: baseURL },
+      { name: 'pl2_requested_data_changed', value: 'true', url: baseURL },
+    ]);
+    await page.goto(`/pl/course_instance/${courseInstance.id}/assessments`);
+    await page.getByRole('link', { name: 'Homework for Internal, External, Manual' }).click();
+    await page
+      .getByRole('link', { name: 'Manual Grading: Fibonacci function, file upload' })
+      .click();
+
+    // The rubric item's (i) explanation button is inside the feedback panel.
+    const infoButton = page.locator('[data-testid="rubric-item-explanation"]').first();
+    await expect(infoButton).toBeVisible();
+
+    // Open the explanation popover (retry until it appears, in case the popover
+    // behavior is still hydrating).
+    const popover = page.locator('.popover');
+    await expect(async () => {
+      await infoButton.click();
+      await expect(popover).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 10000 });
+
+    // Collapse the "Feedback from the Course Staff" panel.
+    await page
+      .locator('.grading-block .collapsible-card-header [data-bs-toggle="collapse"]')
+      .first()
+      .click();
+
+    // The panel body collapses...
+    await expect(
+      page.locator('[id^="submission-feedback-"][id$="-body"]').first(),
+    ).not.toBeVisible();
+    // ...and its popover must be dismissed rather than left floating (the bug).
+    await expect(popover).toHaveCount(0);
+  });
 });
