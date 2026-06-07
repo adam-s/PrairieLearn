@@ -71,6 +71,28 @@ const LEARN_MORE_LINK = (
   </div>
 );
 
+/**
+ * Decides what the "Add users" modal should do with the result of an add attempt.
+ *
+ * `errors` are UIDs that could not be added at all. `unknownUsers` are UIDs that
+ * WERE added but matched no known user — they have never logged in, or (most
+ * commonly) the UID was entered in the wrong format, e.g. without the email
+ * domain. Both must be surfaced, and the modal must stay open whenever there is
+ * anything to report; only a fully clean add closes it. Keeping this decision in
+ * one pure place keeps the success handler and its regression test in sync.
+ */
+export function summarizeAddUsersResult(result: { errors: string[]; unknownUsers: string[] }): {
+  errors: string[];
+  unknownUsers: string[];
+  shouldClose: boolean;
+} {
+  return {
+    errors: result.errors,
+    unknownUsers: result.unknownUsers,
+    shouldClose: result.errors.length === 0 && result.unknownUsers.length === 0,
+  };
+}
+
 const INSTANCE_ROLE_VALUES = ['None', 'Student Data Viewer', 'Student Data Editor'] as const;
 type InstanceRole = (typeof INSTANCE_ROLE_VALUES)[number];
 
@@ -390,12 +412,14 @@ function AddUsersModal({
   const [courseRole, setCourseRole] = useState<CourseRole>('None');
   const [instanceRoles, setInstanceRoles] = useState<Record<string, string>>({});
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [unknownUsers, setUnknownUsers] = useState<string[]>([]);
 
   const resetState = () => {
     setUidText('');
     setCourseRole('None');
     setInstanceRoles({});
     setWarnings([]);
+    setUnknownUsers([]);
     mutation.reset();
   };
 
@@ -404,9 +428,10 @@ function AddUsersModal({
   const mutation = useMutation({
     ...trpc.courseStaff.insertByUserUids.mutationOptions(),
     onSuccess: (data) => {
-      if (data.errors.length > 0) {
-        setWarnings(data.errors);
-      } else {
+      const summary = summarizeAddUsersResult(data);
+      setWarnings(summary.errors);
+      setUnknownUsers(summary.unknownUsers);
+      if (summary.shouldClose) {
         onHide();
       }
       return invalidateStaffList();
@@ -417,6 +442,7 @@ function AddUsersModal({
   const handleSubmit = (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
     setWarnings([]);
+    setUnknownUsers([]);
     const uids = uidText.split(/[,;\s]+/).filter(Boolean);
 
     const courseInstanceChanges = Object.entries(instanceRoles)
@@ -518,6 +544,21 @@ function AddUsersModal({
                   <li key={w}>{w}</li>
                 ))}
               </ul>
+            </div>
+          )}
+          {unknownUsers.length > 0 && (
+            <div className="alert alert-warning mt-3 mb-0">
+              <strong>The following UIDs did not match any known user:</strong>
+              <ul className="mb-0 mt-1">
+                {unknownUsers.map((uid) => (
+                  <li key={uid}>{uid}</li>
+                ))}
+              </ul>
+              <div className="mt-1">
+                They were added, but show as "Unknown user" until they log in. If this was
+                unexpected, verify the UID format (typically the user's full email address) and
+                re-add them.
+              </div>
             </div>
           )}
           {appError && <div className="alert alert-danger mt-3 mb-0">{appError.message}</div>}
