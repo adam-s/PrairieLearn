@@ -24,6 +24,7 @@ import { type GroupInfo, getRoleNamesForUser } from '../lib/groups.shared.js';
 import { idsEqual } from '../lib/id.js';
 import type { IssueRenderData } from '../lib/question-render.types.js';
 import type { UntypedResLocals } from '../lib/res-locals.types.js';
+import { formatMailtoLink } from '../lib/url.js';
 import type { SimpleVariantWithScore } from '../models/variant.js';
 
 import { AiGradingHtmlPreview } from './AiGradingHtmlPreview.js';
@@ -319,9 +320,10 @@ function IssuePanel({
       authz_data.has_course_instance_permission_view);
 
   const msgBody = `Hello ${issue.user_name}\n\nRegarding the issue of:\n\n"${issue.student_message || '-'}"\n\nWe've...`;
-  const mailtoLink = `mailto:${
-    issue.user_email || issue.user_uid || '-'
-  }?subject=Reported%20PrairieLearn%20Issue&body=${encodeURIComponent(msgBody)}`;
+  const mailtoLink = formatMailtoLink(issue.user_email || issue.user_uid || '-', {
+    subject: 'Reported PrairieLearn Issue',
+    body: msgBody,
+  });
 
   return html`
     <div class="card mb-3">
