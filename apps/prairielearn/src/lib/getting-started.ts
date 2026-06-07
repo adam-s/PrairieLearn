@@ -13,6 +13,8 @@ export interface GettingStartedTaskInfo {
   description: string;
   isComplete: boolean;
   link?: string;
+  /** Optional tasks don't block the checklist from being considered complete. */
+  optional?: boolean;
 }
 
 /**
@@ -66,6 +68,7 @@ export async function getGettingStartedTasks({
         'Invite users to the course staff to help manage and deliver the course. If you are working alone, you can skip this task.',
       link: 'staff',
       isComplete: courseHasAddedStaff,
+      optional: true,
     },
     {
       header: 'Create a question',
