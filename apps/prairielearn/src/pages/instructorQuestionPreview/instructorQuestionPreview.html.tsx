@@ -112,7 +112,10 @@ export function InstructorQuestionPreview({
         <div class="col-lg-9 col-sm-12">
           ${readmeHtml
             ? html`
-                <div class="card mb-3 js-readme-card overflow-hidden">
+                <div
+                  class="card mb-3 js-readme-card overflow-hidden"
+                  data-storage-key="readme-collapsed-${resLocals.question.id}"
+                >
                   <div class="card-header d-flex align-items-center collapsible-card-header">
                     <h2 class="me-auto">
                       README <span class="small text-muted">(not visible to students)</span>
