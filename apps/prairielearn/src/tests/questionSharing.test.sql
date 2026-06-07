@@ -24,3 +24,17 @@ WHERE
   ss.name = $sharing_set_name
   AND q.qid = $qid
   AND q.course_id = $course_id;
+
+-- BLOCK soft_delete_assessment
+UPDATE assessments
+SET
+  deleted_at = now()
+WHERE
+  id = $assessment_id;
+
+-- BLOCK restore_assessment
+UPDATE assessments
+SET
+  deleted_at = NULL
+WHERE
+  id = $assessment_id;

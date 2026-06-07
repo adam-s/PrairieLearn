@@ -19,6 +19,7 @@ router.get(
     const assessment_id = req.params.assessment_id;
     const assessment = await selectOptionalAssessmentById(assessment_id);
     if (
+      assessment?.deleted_at != null ||
       !assessment?.share_source_publicly ||
       assessment.course_instance_id !== res.locals.course_instance.id
     ) {

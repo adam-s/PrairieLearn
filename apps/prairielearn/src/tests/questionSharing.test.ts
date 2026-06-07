@@ -1206,6 +1206,30 @@ describe('Question Sharing', { timeout: 60_000 }, function () {
     );
 
     test.sequential(
+      'Do not serve the public assessment questions page for a soft-deleted assessment',
+      async () => {
+        const sharedAssessmentId = (
+          await selectAssessmentByTid({
+            tid: 'test',
+            course_instance_id: sharingCourseInstanceId,
+          })
+        ).id;
+        const sharedAssessmentUrl = `${baseUrl}/public/course_instance/${sharingCourseInstanceId}/assessment/${sharedAssessmentId}/questions`;
+
+        // Soft-delete the (still publicly shared) assessment. share_source_publicly
+        // is untouched, so without a deleted_at guard the page would still render.
+        await sqldb.executeRow(sql.soft_delete_assessment, { assessment_id: sharedAssessmentId });
+        try {
+          const deletedAssessmentPage = await fetchCheerio(sharedAssessmentUrl);
+          assert.equal(deletedAssessmentPage.status, 404);
+        } finally {
+          // Restore so the remaining sequential tests see the live assessment.
+          await sqldb.executeRow(sql.restore_assessment, { assessment_id: sharedAssessmentId });
+        }
+      },
+    );
+
+    test.sequential(
       'Try adding a draft question to a sharing set, ensure sync error is created',
       async () => {
         sharingCourseData.questions[DRAFT_QUESTION_QID].sharingSets = [SHARING_SET_NAME];
