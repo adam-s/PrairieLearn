@@ -12,6 +12,9 @@ indexes
     topics_pkey: PRIMARY KEY (id) USING btree (id)
     topics_course_id_name_key: UNIQUE (course_id, name) USING btree (course_id, name)
 
+check constraints
+    topics_color_length_check: CHECK (char_length(color) <= 100)
+
 foreign-key constraints
     topics_course_id_fkey: FOREIGN KEY (course_id) REFERENCES courses(id) ON UPDATE CASCADE ON DELETE CASCADE
 
