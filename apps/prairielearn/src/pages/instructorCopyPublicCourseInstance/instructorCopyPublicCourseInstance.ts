@@ -38,9 +38,14 @@ router.post(
       })
       .parse(req.body);
 
-    // The ID of the course instance we are copying
+    // The ID of the course instance we are copying.
+    //
+    // `selectOptionalCourseInstanceById` does not filter on `deleted_at`, so we
+    // must reject soft-deleted course instances here. This mirrors the public
+    // question copy path (`instructorCopyPublicQuestion`), whose query requires
+    // `deleted_at IS NULL`.
     const fromCourseInstance = await selectOptionalCourseInstanceById(course_instance_id);
-    if (!fromCourseInstance?.share_source_publicly) {
+    if (!fromCourseInstance?.share_source_publicly || fromCourseInstance.deleted_at !== null) {
       throw new error.HttpStatusError(404, 'Not Found');
     }
     const fromCourse = await selectCourseById(fromCourseInstance.course_id);
