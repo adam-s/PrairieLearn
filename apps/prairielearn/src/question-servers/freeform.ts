@@ -34,6 +34,7 @@ import {
   ElementExtensionJsonSchema,
 } from '../schemas/index.js';
 
+import { getInstructorErrorMessage } from './python-error.js';
 import {
   type ElementExtensionJsonExtension,
   type ExecutionData,
@@ -534,7 +535,7 @@ async function processQuestionPhase<T>(
       }
     }
     courseIssues.push(
-      new CourseIssueError(err.message, {
+      new CourseIssueError(getInstructorErrorMessage(err), {
         data: err.data,
         cause: err,
         fatal: true,
@@ -682,11 +683,14 @@ async function processQuestionServer<T extends ExecutionData>(
     }
     const serverFile = path.join(context.question_dir, 'server.py');
     courseIssues.push(
-      new CourseIssueError(`${serverFile}: Error calling ${phase}(): ${err.toString()}`, {
-        data: err.data,
-        fatal: true,
-        cause: err,
-      }),
+      new CourseIssueError(
+        `${serverFile}: Error calling ${phase}(): ${getInstructorErrorMessage(err, err.toString())}`,
+        {
+          data: err.data,
+          fatal: true,
+          cause: err,
+        },
+      ),
     );
     return { courseIssues, data };
   }
