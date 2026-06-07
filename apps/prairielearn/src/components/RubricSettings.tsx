@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentProps, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Modal, Overlay, Popover } from 'react-bootstrap';
 import { z } from 'zod';
 
@@ -10,6 +10,47 @@ import { b64EncodeUnicode } from '../lib/base64-util.js';
 import type { StaffAssessmentQuestion } from '../lib/client/safe-db-types.js';
 import type { RubricItem } from '../lib/db-types.js';
 import type { RenderedRubricItem, RubricData } from '../lib/manualGrading.types.js';
+
+// Grow rubric textareas to fit their content, but cap the height so a very long
+// item scrolls instead of making the row enormous. (issue #14641)
+const RUBRIC_TEXTAREA_MAX_HEIGHT = 300;
+
+/**
+ * Reset the height, then grow it to fit the content (scrollHeight + vertical
+ * padding) up to RUBRIC_TEXTAREA_MAX_HEIGHT; beyond that, cap the height and let
+ * the textarea scroll. Mirrors the auto-resize used for the manual-grading
+ * feedback box, so rubric text isn't truncated inside a fixed-height textarea.
+ */
+function adjustHeightFromContent(el: HTMLTextAreaElement) {
+  el.style.height = '';
+  if (el.scrollHeight) {
+    const style = window.getComputedStyle(el);
+    const fit =
+      el.scrollHeight +
+      Number.parseFloat(style.paddingTop) +
+      Number.parseFloat(style.paddingBottom);
+    el.style.height = `${Math.min(fit, RUBRIC_TEXTAREA_MAX_HEIGHT)}px`;
+    el.style.overflowY = fit > RUBRIC_TEXTAREA_MAX_HEIGHT ? 'auto' : 'hidden';
+  }
+}
+
+/** A textarea that auto-resizes to fit its content (on mount, value change, and input). */
+function AutoresizeTextarea({ onInput, ...props }: ComponentProps<'textarea'>) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (ref.current) adjustHeightFromContent(ref.current);
+  }, [props.value]);
+  return (
+    <textarea
+      ref={ref}
+      {...props}
+      onInput={(e) => {
+        adjustHeightFromContent(e.currentTarget);
+        onInput?.(e);
+      }}
+    />
+  );
+}
 
 type RubricItemData = Omit<RenderedRubricItem, 'rubric_item' | 'num_submissions'> & {
   rubric_item: Omit<RubricItem, 'rubric_id' | 'id' | 'number' | 'points'> & {
@@ -1239,15 +1280,8 @@ function RubricRow({
       </td>
 
       <td className="align-middle">
-        <textarea
+        <AutoresizeTextarea
           className="form-control"
-          /**
-           * In one of the previous versions, explanation wasn't displayed correctly
-           * when used this way. We fixed it by making the textarea uncontrolled and
-           * putting the explanation text in the body of the textarea element.
-           * However, this method will not work well with "Discard changes".
-           * Ditto for grader note below.
-           */
           value={item.rubric_item.explanation ?? ''}
           maxLength={10000}
           style={{ minWidth: '15rem' }}
@@ -1258,7 +1292,7 @@ function RubricRow({
       </td>
 
       <td className="align-middle">
-        <textarea
+        <AutoresizeTextarea
           className="form-control"
           value={item.rubric_item.grader_note ?? ''}
           maxLength={10000}
