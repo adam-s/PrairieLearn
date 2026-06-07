@@ -859,10 +859,10 @@ export function RubricSettings({
                               , or{' '}
                               <button
                                 type="button"
-                                className="btn btn-link p-0 align-baseline text-decoration-none"
-                                onClick={() => submitSettings(false)}
+                                className="btn btn-link p-0 align-baseline text-decoration-none text-danger"
+                                onClick={() => setShowDeleteConfirmModal(true)}
                               >
-                                Disable rubric
+                                Delete rubric
                               </button>{' '}
                               to switch back to manual grade input.
                             </>
