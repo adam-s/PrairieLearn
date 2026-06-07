@@ -5,8 +5,9 @@ import * as sqldb from '@prairielearn/postgres';
 
 import { dangerousFullSystemAuthz } from '../lib/authz-data-lib.js';
 import { config } from '../lib/config.js';
+import { updateInstanceQuestionScore } from '../lib/manualGrading.js';
 import { regradeAllAssessmentInstances } from '../lib/regrading.js';
-import { selectAssessmentByTid } from '../models/assessment.js';
+import { selectAssessmentById, selectAssessmentByTid } from '../models/assessment.js';
 import { selectCourseInstanceById } from '../models/course-instances.js';
 import { ensureUncheckedEnrollment } from '../models/enrollment.js';
 import { selectUserByUid } from '../models/user.js';
@@ -58,6 +59,17 @@ describe('No-credit access rule must not change assessment instance points (issu
     });
     context.hwMultiId = hwMultiId;
     context.hwMultiUrl = `${context.courseInstanceBaseUrl}/assessment/${hwMultiId}/`;
+
+    // A third assessment whose second question is *manually* graded, used to
+    // exercise the manual-points regrade boundary: a no-credit-window question
+    // can still earn points from a deliberate instructor manual grade, and those
+    // points must survive a regrade.
+    const { id: hwManualId } = await selectAssessmentByTid({
+      course_instance_id: '1',
+      tid: 'hw23-noCreditManualPoints',
+    });
+    context.hwManualId = hwManualId;
+    context.hwManualUrl = `${context.courseInstanceBaseUrl}/assessment/${hwManualId}/`;
   }, 120_000);
 
   afterAll(helperServer.after, 120_000);
@@ -182,6 +194,59 @@ describe('No-credit access rule must not change assessment instance points (issu
       { assessment_instance_id: assessmentInstanceId },
       z.object({ points: z.number().nullable() }),
     );
+  }
+
+  function readQuestionBreakdown(assessmentInstanceId: number) {
+    return sqldb.queryRows(
+      sql.read_instance_question_point_breakdown,
+      { assessment_instance_id: assessmentInstanceId },
+      z.object({
+        id: z.string(),
+        points: z.number().nullable(),
+        auto_points: z.number().nullable(),
+        manual_points: z.number().nullable(),
+      }),
+    );
+  }
+
+  // Save (not grade) a submission for the question reachable from `pageUrl` whose
+  // visible link text contains `questionLinkText`. Used for manually-graded
+  // questions, which have no auto-grade step -- saving just records a submission
+  // (which, in the no-credit window, carries credit = 0). Returns the assessment
+  // instance id parsed from the assessment-overview URL.
+  async function submitQuestionFromPage(
+    pageUrl: string,
+    questionLinkText: string,
+    headers: Record<string, string>,
+  ): Promise<number> {
+    const pageResponse = await helperClient.fetchCheerio(pageUrl, { headers });
+    assert.isTrue(pageResponse.ok);
+    const instanceUrl = pageResponse.url;
+    assert.include(instanceUrl, '/assessment_instance/');
+
+    const questionPath = pageResponse.$(`a:contains(${questionLinkText})`).attr('href');
+    assert.isString(questionPath, `question link "${questionLinkText}" should be present`);
+    const questionUrl = `${context.siteUrl}${questionPath}`;
+
+    const questionResponse = await helperClient.fetchCheerio(questionUrl, { headers });
+    assert.isTrue(questionResponse.ok);
+    const csrf = helperClient.getCSRFToken(questionResponse.$('.question-form'));
+    const variantId = questionResponse.$('.question-form input[name="__variant_id"]').val() as string;
+    assert.isString(variantId);
+
+    const saveResponse = await helperClient.fetchCheerio(questionUrl, {
+      method: 'POST',
+      body: new URLSearchParams({
+        __action: 'save',
+        __csrf_token: csrf,
+        __variant_id: variantId,
+        explanation: 'a saved no-credit answer',
+      }),
+      headers,
+    });
+    assert.isTrue(saveResponse.ok);
+
+    return helperClient.parseAssessmentInstanceId(instanceUrl);
   }
 
   test.sequential('credit-bearing rule still scores normally (control)', async () => {
@@ -481,6 +546,105 @@ describe('No-credit access rule must not change assessment instance points (issu
         'regrade keeps Q1 (for credit) and excludes Q2 (no credit): 10, not 0 and not 20',
       );
       assert.equal(afterRegrade?.score_perc, 50);
+    },
+  );
+
+  test.sequential(
+    'multi-question regrade must keep a no-credit question\'s instructor-awarded MANUAL points',
+    async () => {
+      // A no-credit question can still legitimately earn points -- not from its
+      // own submission credit, but from a deliberate instructor MANUAL grade.
+      // Manual grading writes instance_questions.manual_points/points but never
+      // touches a submission's credit, so a question answered in a no-credit
+      // window keeps max(submission.credit) = 0 even after the instructor awards
+      // manual points. A per-question exclusion keyed only on submission credit
+      // therefore wrongly drops those manual points on a regrade -- silently
+      // erasing instructor work. The regrade must exclude only a question's
+      // *auto* points by credit; manual awards are always counted.
+      //
+      // Scenario (Q1 auto 10pts, Q2 manual 10pts, instance max 20):
+      //   1. Q1 answered 100% under credit:100  -> Q1.points = 10 (auto).
+      //   2. Q2 (manual) answered under credit:0 -> a submission with credit = 0;
+      //      no points yet (manual question, ungraded).
+      //   3. Instructor manually grades Q2 = 7 points (credit:100 staff action)
+      //      -> Q2.manual_points = 7, instance total = 10 + 7 = 17. Q2's
+      //      submission stays credit = 0.
+      //   4. Instructor regrade (credit omitted): must keep Q2's 7 manual points
+      //      -> instance total stays 17 (NOT 10, which would erase the manual
+      //      grade just because Q2's submission counts under no credit).
+
+      // Phase 1: Q1 auto, for credit.
+      const creditHeaders = await actAs('student-manual@example.com', CREDIT_DATE);
+      const aiId = await gradeQuestionFromPage(context.hwManualUrl, 'HW23.1.', creditHeaders, 100);
+      assert.equal((await readPoints(aiId))?.points, 10);
+
+      // Phase 2: Q2 (manual question) answered in the no-credit window. Saving a
+      // submission records credit = 0 for it; no points yet.
+      const noCreditHeaders = await actAs('student-manual@example.com', NO_CREDIT_DATE);
+      await submitQuestionFromPage(
+        `${context.courseInstanceBaseUrl}/assessment_instance/${aiId}`,
+        'HW23.2.',
+        noCreditHeaders,
+      );
+      // The no-credit submission alone must not change the instance total (#958);
+      // the manual question has earned nothing yet.
+      assert.equal((await readPoints(aiId))?.points, 10);
+
+      // Phase 3: instructor manually grades Q2 = 7 points. This is the production
+      // manual-grade path (updateInstanceQuestionScore -> updateAssessmentInstanceGrade
+      // with credit:100), so the instance total becomes 10 + 7 = 17.
+      const breakdownBefore = await readQuestionBreakdown(aiId);
+      const q2Id = breakdownBefore[1].id; // ordered by aq.number; Q2 is the manual one
+      const assessment = await selectAssessmentById(String(context.hwManualId));
+      await updateInstanceQuestionScore({
+        assessment,
+        instance_question_id: q2Id,
+        submission_id: null,
+        check_modified_at: null,
+        score: { manual_points: 7 },
+        authn_user_id: '1',
+      });
+      assert.equal(
+        (await readPoints(aiId))?.points,
+        17,
+        'manual grade must record the instructor-awarded points (10 auto + 7 manual)',
+      );
+      const afterManual = await readQuestionBreakdown(aiId);
+      assert.equal(afterManual[1].manual_points, 7, 'Q2 records 7 manual points');
+      assert.equal(afterManual[1].auto_points ?? 0, 0, 'Q2 (manual question) has no auto points');
+
+      // Make the recorded instance points stale so the regrade must recompute.
+      await sqldb.execute(sql.set_assessment_instance_points, {
+        assessment_instance_id: aiId,
+        points: 999,
+        score_perc: 0,
+      });
+
+      // Phase 4: instructor regrade (credit omitted -> excludeNoCreditQuestions).
+      // Q2's submission counts under no credit, but its 7 manual points were
+      // awarded by an instructor and must be kept. The regrade must leave the
+      // instance total at 17 -- Q1's 10 auto (for credit) plus Q2's 7 manual.
+      const jobSequenceId = await regradeAllAssessmentInstances(
+        String(context.hwManualId),
+        '1',
+        '1',
+      );
+      await helperServer.waitForJobSequenceSuccess(jobSequenceId);
+
+      const afterRegrade = await readPoints(aiId);
+      assert.equal(
+        afterRegrade?.points,
+        17,
+        'regrade must keep Q2\'s instructor manual points: 17, not 10 (erased)',
+      );
+      const afterRegradeBreakdown = await readQuestionBreakdown(aiId);
+      assert.equal(
+        afterRegradeBreakdown[1].manual_points,
+        7,
+        'Q2 manual points survive the regrade',
+      );
+      // score_perc: 17/20 = 85%.
+      assert.equal(afterRegrade?.score_perc, 85);
     },
   );
 });

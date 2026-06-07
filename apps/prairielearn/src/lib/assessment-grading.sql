@@ -70,11 +70,15 @@ WHERE
 -- When $exclude_no_credit_questions is true (the regrade/recompute paths, which
 -- resolve credit per instance rather than from a single submission), a question
 -- whose own submitted work counts under no credit (per-question max(s.credit) is
--- 0 or NULL) contributes 0 to the instance points -- so a no-credit question is
--- not folded into the instance total just because a *different* question was
--- answered for credit (issue #958, multi-question case). max_points is never
--- gated (the maximum possible is independent of credit), and the submission path
--- passes $exclude_no_credit_questions = false so its behavior is unchanged.
+-- 0 or NULL) contributes only its *manual* points to the instance total -- its
+-- AUTO points are dropped, so a no-credit question is not folded into the total
+-- just because a *different* question was answered for credit (issue #958,
+-- multi-question case). Manual points are always counted: they come from a
+-- deliberate instructor grade (which never sets submission credit), so keying
+-- their exclusion on submission credit would silently erase instructor work.
+-- max_points is never gated (the maximum possible is independent of credit), and
+-- the submission path passes $exclude_no_credit_questions = false so its
+-- behavior is unchanged.
 WITH
   question_credit AS (
     SELECT
@@ -95,7 +99,7 @@ WITH
       z.id AS zone_id,
       CASE
         WHEN $exclude_no_credit_questions
-        AND coalesce(qc.max_credit, 0) = 0 THEN 0
+        AND coalesce(qc.max_credit, 0) = 0 THEN coalesce(iq.manual_points, 0)
         ELSE iq.points
       END AS points,
       row_number() OVER (
@@ -104,7 +108,7 @@ WITH
         ORDER BY
           CASE
             WHEN $exclude_no_credit_questions
-            AND coalesce(qc.max_credit, 0) = 0 THEN 0
+            AND coalesce(qc.max_credit, 0) = 0 THEN coalesce(iq.manual_points, 0)
             ELSE iq.points
           END DESC
       ) AS points_rank,
