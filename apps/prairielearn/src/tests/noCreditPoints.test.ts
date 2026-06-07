@@ -5,6 +5,7 @@ import * as sqldb from '@prairielearn/postgres';
 
 import { dangerousFullSystemAuthz } from '../lib/authz-data-lib.js';
 import { config } from '../lib/config.js';
+import { regradeAllAssessmentInstances } from '../lib/regrading.js';
 import { selectAssessmentByTid } from '../models/assessment.js';
 import { selectCourseInstanceById } from '../models/course-instances.js';
 import { ensureUncheckedEnrollment } from '../models/enrollment.js';
@@ -21,7 +22,7 @@ const sql = sqldb.loadSqlEquiv(import.meta.url);
 // though credit is 0), which corrupts the "attempted for credit" signal that
 // e.g. CS 411 reads from the gradebook.
 //
-// The test course assessment `hw9-noCreditPoints` has two windows:
+// The test course assessment `hw21-noCreditPoints` has two windows:
 //   2020 -> credit: 100  (the for-credit phase)
 //   2021+ -> active: true, credit: 0  (submittable but no credit)
 const CREDIT_DATE = 'pl_test_date=2020-06-01T00:00:01Z';
@@ -43,7 +44,7 @@ describe('No-credit access rule must not change assessment instance points (issu
 
     const { id: hwId } = await selectAssessmentByTid({
       course_instance_id: '1',
-      tid: 'hw9-noCreditPoints',
+      tid: 'hw21-noCreditPoints',
     });
     context.hwId = hwId;
     context.hwUrl = `${context.courseInstanceBaseUrl}/assessment/${hwId}/`;
@@ -86,7 +87,7 @@ describe('No-credit access rule must not change assessment instance points (issu
     const instanceUrl = assessmentResponse.url;
     assert.include(instanceUrl, '/assessment_instance/');
 
-    const questionPath = assessmentResponse.$('a:contains(HW9.1.)').attr('href');
+    const questionPath = assessmentResponse.$('a:contains(HW21.1.)').attr('href');
     assert.isString(questionPath);
     const questionUrl = `${context.siteUrl}${questionPath}`;
 
@@ -173,7 +174,7 @@ describe('No-credit access rule must not change assessment instance points (issu
         { headers: noCreditHeaders },
       );
       assert.isTrue(instanceResponse.ok);
-      const qPath = instanceResponse.$('a:contains(HW9.1.)').attr('href');
+      const qPath = instanceResponse.$('a:contains(HW21.1.)').attr('href');
       assert.isString(qPath, 'question link should be present in no-credit window');
       assert.include(qPath as string, questionPath);
       const qUrl = `${context.siteUrl}${qPath}`;
@@ -199,6 +200,95 @@ describe('No-credit access rule must not change assessment instance points (issu
       const afterNoCredit = await readPoints(aiId);
       assert.equal(afterNoCredit?.points, 5, 'no-credit work must not change recorded points');
       assert.equal(afterNoCredit?.score_perc, 50, 'no-credit work must not change recorded score');
+    },
+  );
+
+  test.sequential(
+    'instructor regrade must recompute earned points even after a no-credit submission (issue #137-A)',
+    async () => {
+      // Red-team finding #137-A. A student earns for-credit points, then makes a
+      // single no-credit practice submission. Because the recompute paths resolve
+      // credit from the *last* submission (which is now the no-credit one),
+      // gating the credit math on that value made an instructor regrade a silent
+      // no-op -- the student's legitimately-earned for-credit points were never
+      // corrected. The regrade must recompute from the for-credit work, not be
+      // suppressed by the trailing no-credit submission.
+
+      // Phase 1: earn for-credit points (50% -> 5 points on the 10-point question).
+      const creditHeaders = await actAs('student-regrade@example.com', CREDIT_DATE);
+      const aiId = await startAndGrade(creditHeaders, 50);
+      assert.equal((await readPoints(aiId))?.points, 5);
+
+      // Phase 2: one no-credit practice submission scoring 0% -- it must not
+      // change the recorded points, and (scoring 0%) it leaves the question's
+      // earned points at the for-credit value, so the correct regrade result is
+      // unambiguous. The instance now has a for-credit submission AND a more
+      // recent no-credit submission (whose credit = 0 is what the buggy gate
+      // wrongly keyed the regrade on).
+      const noCreditHeaders = { cookie: NO_CREDIT_DATE };
+      const instanceResponse = await helperClient.fetchCheerio(
+        `${context.courseInstanceBaseUrl}/assessment_instance/${aiId}`,
+        { headers: noCreditHeaders },
+      );
+      assert.isTrue(instanceResponse.ok);
+      const qPath = instanceResponse.$('a:contains(HW21.1.)').attr('href');
+      assert.isString(qPath);
+      const qUrl = `${context.siteUrl}${qPath}`;
+      const qResponse = await helperClient.fetchCheerio(qUrl, { headers: noCreditHeaders });
+      assert.isTrue(qResponse.ok);
+      const csrf = helperClient.getCSRFToken(qResponse.$('.question-form'));
+      const variantId = qResponse.$('.question-form input[name="__variant_id"]').val() as string;
+      assert.isString(variantId);
+      const gradeResponse = await helperClient.fetchCheerio(qUrl, {
+        method: 'POST',
+        body: new URLSearchParams({
+          __action: 'grade',
+          __csrf_token: csrf,
+          __variant_id: variantId,
+          s: '0',
+        }),
+        headers: noCreditHeaders,
+      });
+      assert.isTrue(gradeResponse.ok);
+      // The no-credit submission must not have changed the recorded points.
+      assert.equal((await readPoints(aiId))?.points, 5);
+
+      // Simulate a stale/incorrect recorded instance score that an instructor
+      // regrade is meant to correct (e.g. a points policy change). The for-credit
+      // work is intact in instance_questions; only assessment_instances.points is
+      // wrong. A correct regrade must recompute it back from the graded work.
+      // (score_perc is set to 0 so the no-decrease floor does not mask the
+      // recompute -- a regrade legitimately never decreases an existing score.)
+      await sqldb.execute(sql.set_assessment_instance_points, {
+        assessment_instance_id: aiId,
+        points: 999,
+        score_perc: 0,
+      });
+      assert.equal((await readPoints(aiId))?.points, 999);
+
+      // Instructor regrade (the production path: regradeAllAssessmentInstances ->
+      // regradeSingleAssessmentInstance -> updateAssessmentInstanceGrade with NO
+      // explicit credit). With the trailing no-credit submission, the buggy gate
+      // resolved credit = 0 and returned early, leaving points = 999 (a silent
+      // no-op that withholds the legitimately-earned correction).
+      const jobSequenceId = await regradeAllAssessmentInstances(
+        String(context.hwId),
+        '1', // user_id (instructor)
+        '1', // authn_user_id
+      );
+      await helperServer.waitForJobSequenceSuccess(jobSequenceId);
+
+      const afterRegrade = await readPoints(aiId);
+      assert.equal(
+        afterRegrade?.points,
+        5,
+        'regrade must recompute the earned for-credit points (not no-op to the stale 999)',
+      );
+      assert.equal(
+        afterRegrade?.score_perc,
+        50,
+        'regrade must recompute the earned for-credit score (not no-op to the stale 0)',
+      );
     },
   );
 });

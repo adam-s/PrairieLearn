@@ -46,27 +46,18 @@ export async function updateAssessmentInstanceGrade({
     );
 
     if (credit == null) {
-      // If credit was not explicitly set, fetch it from the last submission.
+      // If credit was not explicitly set (the regrade/recompute paths), resolve
+      // it from the highest credit the instance's submitted work counts under --
+      // NOT the most recent submission's credit. A later no-credit practice
+      // submission must not suppress a regrade of points the student earned under
+      // an earlier for-credit rule. An instance whose submissions are all
+      // no-credit (or have a NULL credit) resolves to 0.
       credit =
         (await queryOptionalScalar(
-          sql.select_credit_of_last_submission,
+          sql.select_max_credit_of_submissions,
           { assessment_instance_id },
           SubmissionSchema.shape.credit,
         )) ?? 0;
-    }
-
-    // If the effective access rule grants no credit, working a question must not
-    // change the recorded points/score at all. This preserves the existing value
-    // (left unset for students who never attempted for credit), rather than
-    // overwriting it with the uncredited earned points. Staff actions that should
-    // always apply (e.g. manual grading) pass an explicit non-zero credit, so
-    // they are unaffected.
-    if (credit === 0) {
-      return {
-        updated: false,
-        points: assessmentInstance.points ?? 0,
-        score_perc: assessmentInstance.score_perc ?? 0,
-      };
     }
 
     const pointsByZone =
@@ -75,11 +66,19 @@ export async function updateAssessmentInstanceGrade({
     const instanceQuestionsUsedForGrade = pointsByZone.flatMap((zone) => zone.iq_ids);
     const totalPoints = pointsByZone.reduce((sum, zone) => sum + zone.points, 0);
 
-    // compute the score in points, maxing out at max_points + max_bonus_points
-    const points = Math.min(
+    // If the effective access rule grants no credit, working a question must not
+    // change the recorded points -- preserve the existing value (left unset for
+    // students who never attempted for credit) rather than overwriting it with
+    // the uncredited earned points (issue #958). Only the points value is gated:
+    // the bookkeeping below (used_for_grade, modified_at, the score log) still
+    // runs so a no-credit attempt is recorded consistently. Staff actions that
+    // should always apply (e.g. manual grading) pass an explicit non-zero credit,
+    // and a regrade now resolves the for-credit rule above, so neither is gated.
+    const computedPoints = Math.min(
       totalPoints,
       (assessmentInstance.max_points ?? 0) + (assessmentInstance.max_bonus_points ?? 0),
     );
+    const points = credit === 0 ? (assessmentInstance.points ?? 0) : computedPoints;
 
     // Compute the score as a percentage, applying credit bonus/limits. If
     // max_points is zero (or null), points will typically also be zero, so we

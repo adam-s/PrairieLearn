@@ -3,7 +3,7 @@
   "type": "Homework",
   "title": "Homework to test no-credit points handling",
   "set": "Homework",
-  "number": "9",
+  "number": "21",
   "allowAccess": [
     {
       "startDate": "2020-01-01T00:00:01",

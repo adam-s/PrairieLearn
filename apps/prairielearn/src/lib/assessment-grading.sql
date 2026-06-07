@@ -8,19 +8,22 @@ WHERE
 FOR NO KEY UPDATE OF
   ai;
 
--- BLOCK select_credit_of_last_submission
+-- BLOCK select_max_credit_of_submissions
+-- The highest credit the instance's submitted work counts under. Used only when
+-- the caller does not pass an explicit credit (the regrade/recompute paths).
+-- Resolving the *highest* credit -- rather than the most recent submission's --
+-- ensures a regrade recomputes the points a student legitimately earned under a
+-- for-credit rule, instead of being suppressed by a later no-credit practice
+-- submission. NULL submission credits are ignored by MAX; an instance with only
+-- no-credit (or credit-less) submissions resolves to NULL -> treated as 0.
 SELECT
-  s.credit
+  max(s.credit)
 FROM
   submissions AS s
   JOIN variants AS v ON (v.id = s.variant_id)
   JOIN instance_questions AS iq ON (iq.id = v.instance_question_id)
 WHERE
-  iq.assessment_instance_id = $assessment_instance_id
-ORDER BY
-  s.date DESC
-LIMIT
-  1;
+  iq.assessment_instance_id = $assessment_instance_id;
 
 -- BLOCK update_assessment_instance_grade
 WITH
