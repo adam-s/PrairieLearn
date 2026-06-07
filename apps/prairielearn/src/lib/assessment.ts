@@ -28,6 +28,7 @@ import {
 import { gradeVariant } from './grading.js';
 import { getGroupId } from './groups.js';
 import * as ltiOutcomes from './ltiOutcomes.js';
+import { roundPoints } from './points.js';
 import { createServerJob } from './server-jobs.js';
 
 const debug = debugfn('prairielearn:assessment');
@@ -187,7 +188,12 @@ export async function updateAssessmentInstance(
     );
 
     const pointsByZone = await computeAssessmentInstanceScoreByZone({ assessment_instance_id });
-    const totalPointsZones = pointsByZone.reduce((sum, zone) => sum + zone.max_points, 0);
+    // Round to avoid accumulated floating-point error when summing fractional
+    // zone max points (e.g. 1.2 + 1.6 + ... summing to 9.999999999999998 instead
+    // of 10). See https://github.com/PrairieLearn/PrairieLearn/issues/10928.
+    const totalPointsZones = roundPoints(
+      pointsByZone.reduce((sum, zone) => sum + zone.max_points, 0),
+    );
 
     const newMaxPoints = await sqldb.queryOptionalRow(
       sql.update_assessment_instance_max_points,

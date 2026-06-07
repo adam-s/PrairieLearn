@@ -11,6 +11,7 @@ import {
 import { IdSchema } from '@prairielearn/zod';
 
 import { AssessmentInstanceSchema, SubmissionSchema } from './db-types.js';
+import { roundPoints } from './points.js';
 
 const sql = loadSqlEquiv(import.meta.url);
 
@@ -59,7 +60,10 @@ export async function updateAssessmentInstanceGrade({
       precomputedPointsByZone ??
       (await computeAssessmentInstanceScoreByZone({ assessment_instance_id }));
     const instanceQuestionsUsedForGrade = pointsByZone.flatMap((zone) => zone.iq_ids);
-    const totalPoints = pointsByZone.reduce((sum, zone) => sum + zone.points, 0);
+    // Round to avoid accumulated floating-point error when summing fractional
+    // question/zone points (e.g. 1.2 + 1.6 + ... summing to 9.999999999999998
+    // instead of 10). See https://github.com/PrairieLearn/PrairieLearn/issues/10928.
+    const totalPoints = roundPoints(pointsByZone.reduce((sum, zone) => sum + zone.points, 0));
 
     // compute the score in points, maxing out at max_points + max_bonus_points
     const points = Math.min(
