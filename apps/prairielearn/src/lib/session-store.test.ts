@@ -74,8 +74,8 @@ describe('PostgresSessionStore', () => {
       assert.deepEqual(session.expiresAt, expiresAt);
 
       const userSession = await queryRow(
-        sql.select_user_session_by_session_id,
-        { session_id: '1' },
+        sql.select_user_session_by_key,
+        { key: '1' },
         UserSessionSchema,
       );
 

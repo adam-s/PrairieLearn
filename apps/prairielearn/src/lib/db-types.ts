@@ -1661,8 +1661,8 @@ export const UserSessionSchema = z.object({
   data: z.any(),
   expires_at: DateFromISOString,
   id: IdSchema,
+  key: z.string(),
   revoked_at: DateFromISOString.nullable(),
-  session_id: z.string(),
   updated_at: DateFromISOString,
   user_id: IdSchema.nullable(),
 });

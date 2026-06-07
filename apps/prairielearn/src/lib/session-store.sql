@@ -4,22 +4,22 @@ SELECT
 FROM
   user_sessions
 WHERE
-  session_id = $session_id
+  key = $key
   AND expires_at > now()
   AND revoked_at IS NULL;
 
 -- BLOCK set_session
 INSERT INTO
-  user_sessions (session_id, user_id, data, updated_at, expires_at)
+  user_sessions (key, user_id, data, updated_at, expires_at)
 VALUES
   (
-    $session_id,
+    $key,
     $user_id,
     $data::jsonb,
     now(),
     $expires_at
   )
-ON CONFLICT (session_id) DO UPDATE
+ON CONFLICT (key) DO UPDATE
 SET
   user_id = $user_id,
   data = $data::jsonb,
@@ -31,4 +31,4 @@ UPDATE user_sessions
 SET
   revoked_at = now()
 WHERE
-  session_id = $session_id;
+  key = $key;

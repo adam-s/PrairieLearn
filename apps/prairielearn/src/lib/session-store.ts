@@ -25,24 +25,24 @@ export class PostgresSessionStore implements SessionStore {
   }
 
   async set(
-    session_id: string,
+    key: string,
     data: (Record<string, unknown> & { user_id?: string }) | null,
     expires_at: Date,
   ) {
     this.setCounter.add(1);
 
     await execute(sql.set_session, {
-      session_id,
+      key,
       data: JSON.stringify(data),
       expires_at,
       user_id: data?.user_id ?? null,
     });
   }
 
-  async get(session_id: string) {
+  async get(key: string) {
     this.getCounter.add(1);
 
-    const session = await queryOptionalRow(sql.get_session, { session_id }, UserSessionSchema);
+    const session = await queryOptionalRow(sql.get_session, { key }, UserSessionSchema);
 
     if (!session) {
       return null;
@@ -54,9 +54,9 @@ export class PostgresSessionStore implements SessionStore {
     };
   }
 
-  async destroy(session_id: string) {
+  async destroy(key: string) {
     this.destroyCounter.add(1);
 
-    await execute(sql.destroy_session, { session_id });
+    await execute(sql.destroy_session, { key });
   }
 }
