@@ -84,7 +84,12 @@ BEGIN
         aar.number
     LIMIT 1;
 
-    -- Fill in data if there were no access rules found
+    -- Fill in data if no access rule granted access. The student is not
+    -- authorized, so we must not reveal completed work: hide both the closed
+    -- assessment and its score. Defaulting these to TRUE leaked the score of a
+    -- just-finished exam during the post-reservation PrairieTest grace period,
+    -- where the student is in Exam mode but no rule matches (issue #12579).
+    -- A denied student should never see more than an authorized rule would grant.
     IF active_access_rule_id IS NULL THEN
         authorized = FALSE;
         credit = 0;
@@ -92,8 +97,8 @@ BEGIN
         time_limit_min = NULL;
         password = NULL;
         mode = NULL;
-        show_closed_assessment = TRUE;
-        show_closed_assessment_score = TRUE;
+        show_closed_assessment = FALSE;
+        show_closed_assessment_score = FALSE;
         active = FALSE;
     END IF;
     
