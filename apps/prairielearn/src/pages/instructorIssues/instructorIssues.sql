@@ -95,7 +95,13 @@ SELECT
       'assessment_id',
       a.id,
       'color',
-      aset.color
+      aset.color,
+      -- A deleted assessment is no longer viewable: its links would 404, and a
+      -- deleted assessment whose (now-unused) set was cleaned up has no
+      -- label/color. Flag it so the page shows a neutral "Unknown assessment"
+      -- badge with links hidden instead of crashing on the null label/color.
+      'deleted',
+      a.deleted_at IS NOT NULL
     )
   END AS assessment,
   iq.assessment_instance_id,
