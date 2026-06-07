@@ -120,6 +120,8 @@ export function InstructorAssessmentAccess({
                 <th>Start date</th>
                 <th>End date</th>
                 <th>Active</th>
+                <th>Show closed assessment</th>
+                <th>Show closed assessment score</th>
                 <th>Credit</th>
                 <th>Time limit</th>
                 <th>Password</th>
@@ -176,6 +178,8 @@ export function InstructorAssessmentAccess({
                           )}
                     </td>
                     <td>${access_rule.rule.active ? 'True' : 'False'}</td>
+                    <td>${access_rule.rule.show_closed_assessment ? 'True' : 'False'}</td>
+                    <td>${access_rule.rule.show_closed_assessment_score ? 'True' : 'False'}</td>
                     <td>
                       ${access_rule.rule.credit == null ? '—' : `${access_rule.rule.credit}%`}
                     </td>
