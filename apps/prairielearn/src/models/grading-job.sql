@@ -141,6 +141,7 @@ WITH
   question_data AS (
     SELECT
       s.variant_id,
+      s.auth_user_id,
       q.single_variant,
       a.type AS assessment_type,
       aq.tries_per_variant
@@ -157,6 +158,22 @@ WITH
     SET
       params = COALESCE($params::jsonb, v.params),
       true_answer = COALESCE($true_answer::jsonb, v.true_answer),
+      -- If grading hit a fatal error, mark the variant broken so the student can
+      -- move on to a fresh variant. Every "skip this variant" gate keys off
+      -- broken_at; without this the broken variant is reused forever and the
+      -- student is stuck (issue #5498). Keep `broken`, `broken_at`, and
+      -- `broken_by` in sync exactly as `insert_variant` does when generation
+      -- fails. COALESCE preserves the original break time if already broken.
+      broken = v.broken
+      OR $broken,
+      broken_at = CASE
+        WHEN $broken THEN COALESCE(v.broken_at, now())
+        ELSE v.broken_at
+      END,
+      broken_by = CASE
+        WHEN $broken THEN COALESCE(v.broken_by, qd.auth_user_id)
+        ELSE v.broken_by
+      END,
       num_tries = CASE
         WHEN $gradable THEN v.num_tries + 1
         ELSE v.num_tries
