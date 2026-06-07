@@ -48,6 +48,7 @@ interface DirectoryEntry {
 
 interface DirectoryEntryDirectory extends DirectoryEntry {
   isFile: false;
+  canDelete: boolean;
 }
 
 interface DirectoryEntryFile extends DirectoryEntry {
@@ -133,14 +134,21 @@ async function browseDirectory({
       } else if (stats.isDirectory()) {
         // The .git directory is hidden in the browser interface.
         if (file.name === '.git') return null;
+        const canView = !paths.invalidRootPaths.some((invalidRootPath) =>
+          contains(invalidRootPath, filepath),
+        );
+        const movable = !paths.cannotMove.includes(filepath);
         const result: DirectoryEntryDirectory = {
           id: file.index,
           name: file.name,
           isFile: false,
           path: path.relative(paths.coursePath, filepath),
-          canView: !paths.invalidRootPaths.some((invalidRootPath) =>
-            contains(invalidRootPath, filepath),
-          ),
+          canView,
+          // A directory may be deleted if the user can edit, the directory is
+          // within a valid (viewable) root, and it is not a protected path.
+          // FileDeleteEditor handles directories recursively (fs.remove), and
+          // re-checks these bounds server-side in assertCanEdit().
+          canDelete: canView && movable && paths.hasEditPermission,
         };
         return result;
       } else {
@@ -659,13 +667,38 @@ function DirectoryBrowserBody({
           ${directoryListings.dirs.map(
             (d) => html`
               <tr>
-                <td colspan="2">
-                  <i class="fa fa-folder"></i>
-                  ${d.canView
-                    ? html`<a href="${paths.urlPrefix}/file_view/${encodePath(d.path)}"
-                        >${d.name}</a
-                      >`
-                    : html`<span>${d.name}</span>`}
+                <td class="align-middle">
+                  <div class="d-flex align-items-center">
+                    <i class="fa fa-folder"></i>
+                    ${d.canView
+                      ? html`<a href="${paths.urlPrefix}/file_view/${encodePath(d.path)}"
+                          >${d.name}</a
+                        >`
+                      : html`<span>${d.name}</span>`}
+                  </div>
+                </td>
+                <td class="align-middle">
+                  <div class="d-flex gap-2">
+                    ${isReadOnly
+                      ? ''
+                      : html`
+                          <button
+                            type="button"
+                            class="btn btn-xs btn-secondary text-nowrap"
+                            data-bs-toggle="popover"
+                            data-bs-container="body"
+                            data-bs-html="true"
+                            data-bs-placement="auto"
+                            data-bs-title="Confirm delete"
+                            data-bs-content="${escapeHtml(FileDeleteForm({ file: d, csrfToken }))}"
+                            data-testid="delete-directory-button"
+                            ${d.canDelete ? '' : 'disabled'}
+                          >
+                            <i class="far fa-trash-alt"></i>
+                            <span>Delete</span>
+                          </button>
+                        `}
+                  </div>
                 </td>
               </tr>
             `,

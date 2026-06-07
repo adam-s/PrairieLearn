@@ -800,6 +800,32 @@ function doFiles(data: {
         path: path.join(data.path, 'subdir', 'testfile.txt'),
       });
     });
+    describe('Directories', function () {
+      // Create a fresh, NON-EMPTY directory by uploading a file then moving it
+      // into a new subdirectory (the same proven pattern used above), then
+      // delete the whole directory via its delete-directory-button.
+      testUploadFile({
+        fileViewBaseUrl: data.url,
+        url: data.url,
+        path: path.join(data.path, 'dirfile.txt'),
+        newButtonId: 'New',
+        contents: 'This file lives inside a directory that will be deleted.',
+        filename: 'dirfile.txt',
+      });
+
+      testRenameFile({
+        url: data.url + '/' + encodePath(data.path),
+        path: path.join(data.path, 'deletedir', 'dirfile.txt'),
+        contents: 'This file lives inside a directory that will be deleted.',
+        new_file_name: path.join('deletedir', 'dirfile.txt'),
+      });
+
+      testDeleteDirectory({
+        url: data.url + '/' + encodePath(data.path),
+        path: path.join(data.path, 'deletedir'),
+        containedFile: path.join(data.path, 'deletedir', 'dirfile.txt'),
+      });
+    });
     describe('Client Files', function () {
       testUploadFile({
         fileViewBaseUrl: data.url,
@@ -1120,4 +1146,57 @@ function testDeleteFile(params: { url: string; path: string }) {
   });
 
   pullAndVerifyFileNotInDev(params.path);
+}
+
+// Deleting a directory mirrors deleting a file: the directory row in the file
+// browser exposes a delete control whose popover carries the `delete_file`
+// action with the directory's `file_path`. FileDeleteEditor removes the path
+// recursively (fs.remove), so a non-empty directory is removed too.
+// `params.path` is the directory to delete; `params.containedFile` is a file we
+// place inside it first so the deletion is exercised on a NON-EMPTY directory.
+function testDeleteDirectory(params: { url: string; path: string; containedFile: string }) {
+  describe(`GET to ${params.url} (directory delete)`, () => {
+    it('should load successfully', async () => {
+      const res = await fetch(params.url);
+      assert.isOk(res.ok);
+      locals.$ = cheerio.load(await res.text());
+    });
+    it('should have a delete-directory-button with a CSRF token and the directory file_path', () => {
+      const dirName = params.path.split('/').pop();
+      const row = locals.$(`tr:has(i.fa-folder):has(:contains("${dirName}"))`);
+      elemList = row.find('button[data-testid="delete-directory-button"]');
+      assert.lengthOf(elemList, 1);
+      const $ = cheerio.load(elemList[0].attribs['data-bs-content']);
+      // __csrf_token
+      elemList = $('input[name="__csrf_token"]');
+      assert.lengthOf(elemList, 1);
+      assert.nestedProperty(elemList[0], 'attribs.value');
+      locals.__csrf_token = elemList[0].attribs.value;
+      assert.isString(locals.__csrf_token);
+      // file_path (the directory itself)
+      elemList = $('input[name="file_path"]');
+      assert.lengthOf(elemList, 1);
+      assert.nestedProperty(elemList[0], 'attribs.value');
+      locals.file_path = elemList[0].attribs.value;
+      assert.equal(locals.file_path, params.path);
+    });
+  });
+
+  describe(`POST to ${params.url} with action delete_file (directory)`, function () {
+    it('should load successfully', async () => {
+      const res = await fetch(params.url, {
+        method: 'POST',
+        body: new URLSearchParams({
+          __action: 'delete_file',
+          __csrf_token: locals.__csrf_token,
+          file_path: locals.file_path,
+        }),
+      });
+      assert.isOk(res.ok);
+    });
+  });
+
+  // The directory and everything in it must be gone.
+  pullAndVerifyFileNotInDev(params.path);
+  pullAndVerifyFileNotInDev(params.containedFile);
 }
