@@ -402,3 +402,34 @@ def test_additional_simplifications_cannot_be_used_with_set_notation() -> None:
         ValueError, match=(r"'additional-simplifications'.*'allow-sets'")
     ):
         symbolic_input.prepare(element_html, data)
+
+
+def test_label_span_has_targetable_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The label is rendered into a span with an ``id`` ending in ``-label``.
+
+    This is the hook the CSS uses to preserve whitespace in math labels
+    (issue #4371). If the markup changes, the CSS fix silently stops applying.
+    """
+    monkeypatch.chdir(Path(__file__).parent)
+    element_html = build_element_html('label="$L$ is "')
+    data = make_question_data()
+
+    symbolic_input.prepare(element_html, data)
+    rendered = symbolic_input.render(element_html, data)
+
+    assert 'class="input-group-text"' in rendered
+    assert 'id="pl-symbolic-input-' in rendered and '-label"' in rendered
+
+
+def test_label_css_preserves_whitespace() -> None:
+    """The element CSS preserves literal spaces in (math) labels (issue #4371).
+
+    Bootstrap's ``.input-group-text`` sets ``white-space: nowrap``; combined with
+    MathJax's block-level ``mjx-container`` this collapses the literal space in
+    ``label="$L$ is "`` so it renders as "Lis". A ``white-space: pre-wrap`` rule
+    scoped to the label span restores it. Lock that rule in so it can't regress.
+    """
+    css = (Path(__file__).parent / "pl-symbolic-input.css").read_text()
+    normalized = " ".join(css.split())
+    assert ".pl-symbolic-input .input-group-text[id$='-label']" in normalized
+    assert "white-space: pre-wrap" in normalized
