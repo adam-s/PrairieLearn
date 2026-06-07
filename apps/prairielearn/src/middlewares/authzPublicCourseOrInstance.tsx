@@ -68,7 +68,11 @@ export default typedAsyncHandler<'public-course' | 'public-course-instance'>(
       throw new HttpStatusError(404, 'Not Found');
     }
 
-    if (course_instance && !course_instance.share_source_publicly) {
+    // `selectOptionalCourseInstanceById` does not filter on `deleted_at`, and a
+    // soft-deleted course instance keeps its `share_source_publicly` flag, so we
+    // must reject deleted instances here. This mirrors the public question
+    // preview path, whose query requires `deleted_at IS NULL`.
+    if (course_instance && (!course_instance.share_source_publicly || course_instance.deleted_at != null)) {
       throw new HttpStatusError(404, 'Not Found');
     }
 

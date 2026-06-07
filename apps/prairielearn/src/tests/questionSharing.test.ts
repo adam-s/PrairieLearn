@@ -1190,6 +1190,30 @@ describe('Question Sharing', { timeout: 60_000 }, function () {
     );
 
     test.sequential(
+      'Do not serve public course instance pages for a soft-deleted course instance',
+      async () => {
+        const sharedCourseInstanceUrl = `${baseUrl}/public/course_instance/${sharingCourseInstanceId}/assessments`;
+
+        // Soft-delete the (still publicly shared) course instance. This is what
+        // syncing a removed course instance does: it sets deleted_at without
+        // clearing share_source_publicly. Without a deleted_at guard in the
+        // public-course-instance middleware, the page would still render.
+        await sqldb.executeRow(sql.soft_delete_course_instance, {
+          course_instance_id: sharingCourseInstanceId,
+        });
+        try {
+          const deletedCourseInstancePage = await fetchCheerio(sharedCourseInstanceUrl);
+          assert.equal(deletedCourseInstancePage.status, 404);
+        } finally {
+          // Restore so the remaining sequential tests see the live course instance.
+          await sqldb.executeRow(sql.restore_course_instance, {
+            course_instance_id: sharingCourseInstanceId,
+          });
+        }
+      },
+    );
+
+    test.sequential(
       'Successfully access publicly shared assessment page for the shared assessment',
       async () => {
         const sharedAssessmentId = (
