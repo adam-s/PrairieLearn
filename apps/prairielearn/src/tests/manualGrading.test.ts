@@ -627,6 +627,46 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
           assertAlert($manualGradingIQPage, 'is still open');
         },
       );
+
+      test.sequential(
+        'points/percentage control should be an accessible radio group (issue #10408)',
+        async () => {
+          setUser(defaultUser);
+          const manualGradingIQPage = await (await fetch(manualGradingIQUrl)).text();
+          const $ = cheerio.load(manualGradingIQPage);
+          const form = $('form[name=manual-grading-form]');
+
+          // The choice is a grouped fieldset with a (visually-hidden) legend so
+          // screen readers announce both options as one choice.
+          const fieldset = form.find('fieldset:has(.js-manual-grading-pts-perc-select)');
+          assert.equal(fieldset.length, 1);
+          const legend = fieldset.find('legend');
+          assert.equal(legend.length, 1);
+          assert.match(legend.text(), /points or percentage/i);
+          assert.isTrue(legend.hasClass('visually-hidden'));
+
+          // Two real radio options, each with its own associated <label>.
+          const radios = fieldset.find('input[type=radio].js-manual-grading-pts-perc-select');
+          assert.equal(radios.length, 2);
+          radios.each((_, el) => {
+            const id = $(el).attr('id');
+            assert.isOk(id);
+            assert.equal(form.find(`label[for="${id}"]`).length, 1);
+          });
+
+          // Server contract preserved byte-for-byte: only the "Percentage" radio
+          // carries name=use_score_perc value=on; "Points" uses a different name,
+          // so it posts nothing for use_score_perc (matching the old checkbox).
+          const percRadio = fieldset.find('input[type=radio][name=use_score_perc]');
+          assert.equal(percRadio.length, 1);
+          assert.equal(percRadio.attr('value'), 'on');
+          const pointsRadio = radios.filter((_, el) => $(el).attr('name') !== 'use_score_perc');
+          assert.equal(pointsRadio.length, 1);
+
+          // The old inaccessible single switch must be gone.
+          assert.equal(form.find('input[type=checkbox][name=use_score_perc]').length, 0);
+        },
+      );
     });
 
     describe('Manual grading behaviour when instance is closed', () => {

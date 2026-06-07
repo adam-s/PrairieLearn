@@ -40,24 +40,26 @@ window.resetInstructorGradingPanel = function () {
   // The visibility of points or percentage is based on a toggle that is persisted in local storage,
   // so that graders can use the same setting across multiple instance questions as they move
   // through grading.
+  const applyPtsPercSelection = (use_percentage) => {
+    document.querySelectorAll('.js-manual-grading-pts-perc-select').forEach((radio) => {
+      radio.checked = radio.dataset.ptsPerc === (use_percentage ? 'percentage' : 'points');
+    });
+    document.querySelectorAll('.js-manual-grading-points').forEach((element) => {
+      element.style.display = use_percentage ? 'none' : '';
+    });
+    document.querySelectorAll('.js-manual-grading-percentage').forEach((element) => {
+      element.style.display = use_percentage ? '' : 'none';
+    });
+    window.localStorage.manual_grading_score_use = use_percentage ? 'percentage' : 'points';
+    updatePointsView(null);
+  };
   document.querySelectorAll('.js-manual-grading-pts-perc-select').forEach((toggle) => {
     toggle.addEventListener('change', function () {
-      const use_percentage = this.checked;
-      document.querySelectorAll('.js-manual-grading-pts-perc-select').forEach((toggle) => {
-        toggle.checked = use_percentage;
-      });
-      document.querySelectorAll('.js-manual-grading-points').forEach((element) => {
-        element.style.display = use_percentage ? 'none' : '';
-      });
-      document.querySelectorAll('.js-manual-grading-percentage').forEach((element) => {
-        element.style.display = use_percentage ? '' : 'none';
-      });
-      window.localStorage.manual_grading_score_use = use_percentage ? 'percentage' : 'points';
-      updatePointsView(null);
+      if (!this.checked) return;
+      applyPtsPercSelection(this.dataset.ptsPerc === 'percentage');
     });
-    toggle.checked = window.localStorage.manual_grading_score_use === 'percentage';
-    toggle.dispatchEvent(new Event('change'));
   });
+  applyPtsPercSelection(window.localStorage.manual_grading_score_use === 'percentage');
 
   // Auto points are disabled by default to avoid confusion, since they are not typically changed by this interface.
   document.querySelectorAll('.js-enable-auto-score-edit').forEach((pencil) => {
