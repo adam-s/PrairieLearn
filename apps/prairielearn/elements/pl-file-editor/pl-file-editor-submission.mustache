@@ -1,0 +1,12 @@
+<div class="card mb-2">
+  <div class="card-header d-flex align-items-center">
+    <i class="fas fa-check-circle me-2" style="color: {{check_icon_color}}" aria-hidden="true"></i>
+    {{file_name}}
+  </div>
+  {{#has_file}}
+  <pre class="bg-dark text-white rounded p-3 mb-0"><code>{{file_contents}}</code></pre>
+  {{/has_file}}
+  {{^has_file}}
+  <div class="card-body">No file was submitted.</div>
+  {{/has_file}}
+</div>
