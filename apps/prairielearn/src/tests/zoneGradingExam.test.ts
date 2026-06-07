@@ -61,10 +61,13 @@ const zoneGradingTests: TestZone[][] = [
     { qid: 'partialCredit1', score: 100, sub_points: 1, sub_total_points: 0 },
     { qid: 'partialCredit2', score: 0, sub_points: 0, sub_total_points: 0 },
     { qid: 'partialCredit3', score: 0, sub_points: 0, sub_total_points: 0 },
-    { qid: 'partialCredit4_v2', score: 0, sub_points: 0, sub_total_points: 0 },
-    { qid: 'partialCredit4_v2', score: 0, sub_points: 0, sub_total_points: 0 },
-    { qid: 'partialCredit4_v2', score: 100, sub_points: 5, sub_total_points: 5 },
-    { qid: 'partialCredit3', score: 100, sub_points: 10, sub_total_points: 4 },
+    // partialCredit4_v2 was previously graded with the same wrong (score 0)
+    // answer two more times here. Those identical re-submissions are now rejected
+    // as not gradable (issue #3120), so they no longer consume attempts — the
+    // correct score-100 below now lands on the 2nd attempt (worth 15) instead of
+    // the 4th (worth 5), removing the penalty for re-submitting a wrong answer.
+    { qid: 'partialCredit4_v2', score: 100, sub_points: 15, sub_total_points: 9 },
+    { qid: 'partialCredit3', score: 100, sub_points: 10, sub_total_points: 0 },
   ],
 ];
 

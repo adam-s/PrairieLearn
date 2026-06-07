@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 
+import { isEqual } from 'es-toolkit';
 import * as unzipper from 'unzipper';
 import { z } from 'zod';
 
@@ -267,10 +268,45 @@ export async function saveSubmission(
 
   const hasFatalIssue = courseIssues.some((issue) => issue.fatal);
 
+  let gradable = !!data.gradable && !hasFatalIssue;
+  let format_errors = data.format_errors;
+
+  if (gradable) {
+    // If this answer is identical to the most recent submission that was already
+    // graded, grading it again would consume an attempt (and lower the value of
+    // the remaining attempts on an exam) without changing the score. Treat it as
+    // not gradable, just like a blank answer, so re-submitting an already-graded
+    // answer carries no penalty. We only compare against a previous *graded*
+    // submission, so the normal "save, then grade the same answer" workflow is
+    // unaffected. See https://github.com/PrairieLearn/PrairieLearn/issues/3120.
+    const previousSubmission = await sqldb.queryOptionalRow(
+      sql.select_last_submission_of_variant,
+      { variant_id: submission.variant_id },
+      SubmissionSchema,
+    );
+    const previousWasGraded =
+      previousSubmission != null &&
+      (previousSubmission.score != null || previousSubmission.grading_requested_at != null);
+    if (
+      previousWasGraded &&
+      !previousSubmission.broken &&
+      isEqual(data.submitted_answer, previousSubmission.submitted_answer)
+    ) {
+      gradable = false;
+      format_errors = {
+        ...format_errors,
+        __submission: [
+          'This answer is the same as your previous submission, so it was not graded.',
+        ],
+      };
+    }
+  }
+
   return await insertSubmission({
     ...submission,
     ...data,
-    gradable: !!data.gradable && !hasFatalIssue,
+    format_errors,
+    gradable,
     broken: hasFatalIssue,
   });
 }
