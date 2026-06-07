@@ -28,6 +28,12 @@ const SelectAndAuthzAssessmentSchema = z.object({
 export type ResLocalsAssessment = z.infer<typeof SelectAndAuthzAssessmentSchema>;
 
 export default asyncHandler(async (req, res, next) => {
+  // This middleware guards both student and instructor assessment routes. The
+  // student-facing "Assessment unavailable" access-rules page is misleading on
+  // instructor routes (the assessment is missing/deleted or staff lacks access),
+  // so on those routes surface a standard error instead. (PrairieLearn/PrairieLearn#14697)
+  const isInstructorRoute = req.originalUrl.includes('/instructor/');
+
   const row = await queryOptionalRow(
     sql.select_and_auth,
     {
@@ -41,6 +47,10 @@ export default asyncHandler(async (req, res, next) => {
   if (row === null) {
     if (isTrpcRequest(req)) {
       throw new HttpStatusError(403, 'Access denied');
+    }
+    // Missing/deleted assessment: a not-found error on instructor routes.
+    if (isInstructorRoute) {
+      throw new HttpStatusError(404, 'Assessment not found');
     }
     res.status(403).send(AccessDenied({ resLocals: res.locals }));
     return;
@@ -57,6 +67,10 @@ export default asyncHandler(async (req, res, next) => {
   }
   if (!row.authz_result.authorized) {
     if (isTrpcRequest(req)) {
+      throw new HttpStatusError(403, 'Access denied');
+    }
+    // Access denied: a standard 403 on instructor routes.
+    if (isInstructorRoute) {
       throw new HttpStatusError(403, 'Access denied');
     }
     res.status(403).send(AccessDenied({ resLocals: res.locals }));
