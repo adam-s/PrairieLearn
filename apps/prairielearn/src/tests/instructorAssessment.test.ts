@@ -1,13 +1,20 @@
 import * as cheerio from 'cheerio';
 import type { DataNode, Element } from 'domhandler';
 import { afterAll, assert, beforeAll, describe, it } from 'vitest';
+import { z } from 'zod';
 
+import * as sqldb from '@prairielearn/postgres';
+import { IdSchema } from '@prairielearn/zod';
+
+import { GradingJobSchema, InstanceQuestionSchema, SubmissionSchema } from '../lib/db-types.js';
 import { selectAssessmentInstancesForTable } from '../trpc/assessment/assessment-instances.js';
 
 import * as helperExam from './helperExam.js';
 import type { TestExamQuestion } from './helperExam.js';
 import * as helperQuestion from './helperQuestion.js';
 import * as helperServer from './helperServer.js';
+
+const sql = sqldb.loadSqlEquiv(import.meta.url);
 
 const locals = {} as {
   $: cheerio.CheerioAPI;
@@ -522,6 +529,138 @@ describe('Instructor assessment editing', { timeout: 20_000 }, function () {
     it('should contain the correctly updated score', function () {
       assert.lengthOf(locals.pageData, 1);
       assert.equal(locals.pageData[0].score_perc, assessmentSetScorePerc2);
+    });
+  });
+
+  // Regression coverage for https://github.com/PrairieLearn/PrairieLearn/issues/8805 (and the
+  // bug it references, #8801). An instructor can manually edit the points of an instance question
+  // that the student never submitted an answer to. In that case `updateInstanceQuestionScore` runs
+  // with a null `submission_id` (the manual grading page is unavailable, so the points are edited
+  // directly from the assessment instance page). This exercises that no-submission path end to end
+  // and asserts the instance question is scored without creating a submission or grading job.
+  describe('17. manually grade an instance question with no submission', function () {
+    const gradedPoints = 4;
+    let unansweredInstanceQuestionId: string;
+    let maxPoints: number;
+
+    it('should find an instance question with no submission', async function () {
+      const row = await sqldb.queryRow(
+        sql.select_unanswered_instance_question,
+        { assessment_instance_id: '1' },
+        z.object({
+          id: IdSchema,
+          qid: z.string(),
+          max_points: z.coerce.number(),
+          max_manual_points: z.coerce.number(),
+          max_auto_points: z.coerce.number(),
+        }),
+      );
+      unansweredInstanceQuestionId = row.id;
+      maxPoints = row.max_points;
+      assert.isString(unansweredInstanceQuestionId);
+      assert.isAbove(maxPoints, 0);
+    });
+
+    it('should have no submission before grading', async function () {
+      const submissions = await sqldb.queryRows(
+        sql.select_submissions_for_instance_question,
+        { instance_question_id: unansweredInstanceQuestionId },
+        SubmissionSchema,
+      );
+      assert.lengthOf(submissions, 0);
+    });
+
+    it('should be in the "unanswered" state before grading', async function () {
+      const instanceQuestion = await sqldb.queryRow(
+        sql.select_instance_question,
+        { instance_question_id: unansweredInstanceQuestionId },
+        InstanceQuestionSchema,
+      );
+      assert.equal(instanceQuestion.status, 'unanswered');
+      assert.isNull(instanceQuestion.last_grader);
+    });
+
+    it('should render an edit-question-points form for the unanswered question', async function () {
+      const res = await fetch(locals.instructorAssessmentInstanceUrl);
+      assert.equal(res.status, 200);
+      locals.$ = cheerio.load(await res.text());
+
+      // The edit-points button carries the form (with the instance_question_id) in its
+      // `data-bs-content` popover. Pick the button whose form targets the unanswered question.
+      const buttonEl = locals
+        .$('#instanceQuestionList button[data-testid="edit-question-points-score-button-points"]')
+        .filter((_i, el) => {
+          const content = locals.$(el).attr('data-bs-content') ?? '';
+          return content.includes(`value="${unansweredInstanceQuestionId}"`);
+        });
+      assert.lengthOf(buttonEl, 1);
+
+      locals.data$ = cheerio.load(buttonEl[0].attribs['data-bs-content']);
+
+      const csrf = locals.data$('form input[name="__csrf_token"]');
+      assert.lengthOf(csrf, 1);
+      locals.__csrf_token = csrf[0].attribs.value;
+
+      const action = locals.data$('form input[name="__action"]');
+      assert.lengthOf(action, 1);
+      assert.equal(action[0].attribs.value, 'edit_question_points');
+      locals.__action = action[0].attribs.value;
+
+      const iqInput = locals.data$('form input[name="instance_question_id"]');
+      assert.lengthOf(iqInput, 1);
+      assert.equal(iqInput[0].attribs.value, unansweredInstanceQuestionId);
+
+      assert.lengthOf(locals.data$('form input[name="points"]'), 1);
+    });
+
+    it('should accept a manual points edit with no submission', async function () {
+      const form = locals.data$('form');
+      const res = await fetch(locals.instructorAssessmentInstanceUrl, {
+        method: 'POST',
+        body: new URLSearchParams({
+          __action: locals.__action,
+          __csrf_token: locals.__csrf_token,
+          instance_question_id: unansweredInstanceQuestionId,
+          modified_at: form.find('input[name="modified_at"]').attr('value') ?? '',
+          points: `${gradedPoints}`,
+        }),
+      });
+      assert.equal(res.status, 200);
+    });
+
+    it('should record the points on the instance question', async function () {
+      const instanceQuestion = await sqldb.queryRow(
+        sql.select_instance_question,
+        { instance_question_id: unansweredInstanceQuestionId },
+        InstanceQuestionSchema,
+      );
+      assert.equal(instanceQuestion.points, gradedPoints);
+      // With no auto points, all of the awarded points are manual points.
+      assert.equal(instanceQuestion.manual_points, gradedPoints);
+      assert.closeTo(instanceQuestion.score_perc ?? 0, (gradedPoints / maxPoints) * 100, 0.01);
+      // The edit is attributed to the grader (the dev user) even though there is no submission.
+      assert.isNotNull(instanceQuestion.last_grader);
+      assert.isFalse(instanceQuestion.requires_manual_grading);
+      // An unanswered question stays unanswered even after the points are edited.
+      assert.equal(instanceQuestion.status, 'unanswered');
+    });
+
+    it('should not have created a submission', async function () {
+      const submissions = await sqldb.queryRows(
+        sql.select_submissions_for_instance_question,
+        { instance_question_id: unansweredInstanceQuestionId },
+        SubmissionSchema,
+      );
+      assert.lengthOf(submissions, 0);
+    });
+
+    it('should not have created a grading job', async function () {
+      const gradingJobs = await sqldb.queryRows(
+        sql.select_grading_jobs_for_instance_question,
+        { instance_question_id: unansweredInstanceQuestionId },
+        GradingJobSchema,
+      );
+      assert.lengthOf(gradingJobs, 0);
     });
   });
 });
