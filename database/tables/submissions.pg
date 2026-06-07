@@ -20,7 +20,6 @@ columns
     params: jsonb
     partial_scores: jsonb
     raw_submitted_answer: jsonb
-    regradable: boolean default false
     score: double precision
     submitted_answer: jsonb
     true_answer: jsonb

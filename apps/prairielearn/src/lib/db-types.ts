@@ -1605,7 +1605,6 @@ export const SubmissionSchema = z.object({
   params: z.record(z.string(), z.any()).nullable(),
   partial_scores: z.record(z.string(), z.any()).nullable(),
   raw_submitted_answer: z.record(z.string(), z.any()).nullable(),
-  regradable: z.boolean().default(false),
   score: z.number().nullable(),
   submitted_answer: z.record(z.string(), z.any()).nullable(),
   true_answer: z.record(z.string(), z.any()).nullable(),
