@@ -1,0 +1,16 @@
+{
+    "uuid": "5d14d80e-b0b8-494e-9b2e-0a3a2f5c1a01",
+    "name": "TEST 802",
+    "title": "single_variant flip test course",
+    "assessmentSets": [
+        { "abbreviation": "HW", "name": "Homework", "heading": "Homeworks", "color": "green1" }
+    ],
+    "topics": [
+        {
+            "name": "Test",
+            "color": "gray3",
+            "description": "Feature examples"
+        }
+    ],
+    "tags": []
+}

@@ -1,0 +1,23 @@
+{
+    "uuid": "c2f20e45-0449-46c6-9418-b65a734870bc",
+    "type": "Homework",
+    "title": "single_variant flip test",
+    "set": "HW",
+    "number": "1",
+    "constantQuestionValue": true,
+    "allowAccess": [
+        {
+            "credit": 100
+        }
+    ],
+    "zones": [
+        {
+            "questions": [
+                {
+                    "id": "addNumbers",
+                    "points": 10
+                }
+            ]
+        }
+    ]
+}
