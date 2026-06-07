@@ -171,3 +171,121 @@ test.describe('Manual grading rubric submission panel update', () => {
     ).toBeVisible();
   });
 });
+
+// Regression test for issue #14506: the Positive/Negative grading (starting-points)
+// radios must be hidden when the points the rubric applies to are 0, since both
+// options then start at 0 and the choice is meaningless.
+test.describe('Rubric settings starting points for zero-points case (#14506)', () => {
+  test.setTimeout(60000);
+
+  const RT_STUDENT = {
+    uid: 'e2e_rubric_zero_student@test.com',
+    name: 'E2E Rubric Zero Student',
+    uin: 'E2E014506',
+  };
+
+  let zeroAssessmentId: string;
+
+  test.beforeAll(async ({ courseInstance }) => {
+    const student = await getOrCreateUser(RT_STUDENT);
+    await ensureUncheckedEnrollment({
+      userId: student.id,
+      courseInstance,
+      authzData: dangerousFullSystemAuthz(),
+      requiredRole: ['System'],
+      actionDetail: 'implicit_joined',
+    });
+    const assessment = await selectAssessmentByTid({
+      tid: 'hw9-internalExternalManual',
+      course_instance_id: courseInstance.id,
+    });
+    zeroAssessmentId = assessment.id;
+  });
+
+  test('starting-points radios hide when rubric applies to manual points (max_manual_points = 0)', async ({
+    page,
+    baseURL,
+    courseInstance,
+  }) => {
+    // The auto-only question (autoPoints, no manualPoints) has max_manual_points = 0
+    // and max_points > 0, so "apply to manual points" is the zero-points case.
+    const autoOnlyQuestionTitle = 'Manual Grading: Adding two numbers (with auto points)';
+    const autoOnlyQid = 'manualGrade/addingNumbers2';
+
+    // 1. Student submits to the auto-only question (creates the instance question).
+    await page.context().addCookies([
+      { name: 'pl2_requested_uid', value: RT_STUDENT.uid, url: baseURL },
+      { name: 'pl2_requested_data_changed', value: 'true', url: baseURL },
+    ]);
+    await page.goto(`/pl/course_instance/${courseInstance.id}/assessments`);
+    await page.getByRole('link', { name: 'Homework for Internal, External, Manual' }).click();
+    await page.getByRole('link', { name: autoOnlyQuestionTitle }).click();
+
+    const csrfToken = await page.locator('form input[name="__csrf_token"]').first().inputValue();
+    const variantId = await page.locator('form input[name="__variant_id"]').first().inputValue();
+    await page.request.post(page.url(), {
+      form: { __csrf_token: csrfToken, __variant_id: variantId, __action: 'grade', c: '5' },
+    });
+    await page.context().clearCookies();
+
+    // 2. As staff, open that instance question's manual grading page directly.
+    const iqId = await sqldb.queryScalar(
+      sql.select_latest_instance_question,
+      { assessment_id: zeroAssessmentId, qid: autoOnlyQid },
+      IdSchema,
+    );
+    // Wait for the RubricSettings hydration bundle to load so the component is
+    // interactive before we click its controls (avoids lost pre-hydration clicks).
+    const rubricBundleLoaded = page
+      .waitForResponse(
+        (r) =>
+          r.url().includes('/esm-bundles/hydrated-components/RubricSettings.js') && r.ok(),
+        { timeout: 30000 },
+      )
+      .catch(() => null);
+    await page.goto(
+      `/pl/course_instance/${courseInstance.id}/instructor/assessment/${zeroAssessmentId}/manual_grading/instance_question/${iqId}`,
+    );
+    await rubricBundleLoaded;
+
+    // 3. Open the rubric settings.
+    await page.locator('[aria-label="Toggle rubric settings"]').click();
+    await expect(page.locator('#rubric-setting')).toBeVisible();
+
+    const positiveRadio = page
+      .locator('label')
+      .filter({ hasText: 'Positive grading (start at zero' });
+    const negativeRadio = page.locator('label').filter({ hasText: 'Negative grading' });
+    const applyManualRadio = page
+      .locator('label')
+      .filter({ hasText: 'Apply rubric to manual points' })
+      .locator('input[type="radio"]');
+    const applyTotalRadio = page
+      .locator('label')
+      .filter({ hasText: 'Apply rubric to total points' })
+      .locator('input[type="radio"]');
+
+    // 4. In total-points mode (max_points = 6 > 0) the radios are SHOWN.
+    await expect(applyTotalRadio).toBeChecked();
+    await expect(positiveRadio).toBeVisible();
+    await expect(negativeRadio).toBeVisible();
+
+    // 5. Switch to "apply to manual points" (max_manual_points = 0) -> radios HIDDEN.
+    // RubricSettings hydrates asynchronously (its bundle is imported on demand); a click
+    // landing before hydration hits the static SSR markup and is lost, so re-fire the
+    // mode switch until the reactive result appears. On the unfixed code the radios never
+    // hide (the "manual points" step times out -> red); with the fix they hide (green).
+    await expect(async () => {
+      await applyManualRadio.click({ force: true });
+      await expect(positiveRadio).toBeHidden({ timeout: 1500 });
+      await expect(negativeRadio).toBeHidden({ timeout: 1500 });
+    }).toPass({ timeout: 20000 });
+
+    // 6. Switch back to "apply to total points" -> radios SHOWN again (fix is not over-broad).
+    await expect(async () => {
+      await applyTotalRadio.click({ force: true });
+      await expect(positiveRadio).toBeVisible({ timeout: 1500 });
+      await expect(negativeRadio).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 20000 });
+  });
+});
