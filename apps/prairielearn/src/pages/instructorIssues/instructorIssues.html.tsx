@@ -24,7 +24,14 @@ export const IssueRowSchema = IssueSchema.extend({
   display_timezone: CourseInstanceSchema.shape.display_timezone,
   assessment_id: IdSchema.nullable(),
   assessment: z
-    .object({ label: z.string(), assessment_id: IdSchema, color: AssessmentSetSchema.shape.color })
+    .object({
+      // A deleted assessment may have lost its set (and thus its label/color)
+      // when sync removed the now-unused set, so these can be null.
+      label: z.string().nullable(),
+      assessment_id: IdSchema,
+      color: AssessmentSetSchema.shape.color.nullable(),
+      deleted: z.boolean(),
+    })
     .nullable(),
   assessment_instance_id: IdSchema.nullable(),
   question_qid: QuestionSchema.shape.qid.nullable(),
@@ -229,6 +236,13 @@ function IssueRow({
   const manualGradingUrl = `/pl/course_instance/${issue.course_instance_id}/instructor/assessment/${issue.assessment_id}/manual_grading/instance_question/${issue.instance_question_id}`;
   const assessmentInstanceUrl = `/pl/course_instance/${issue.course_instance_id}/instructor/assessment_instance/${issue.assessment_instance_id}`;
 
+  // The issue's assessment was deleted: its assessment-scoped links (student
+  // view, manual grading, assessment details) all point at a now-missing
+  // assessment and would 404, and the assessment may have lost its set (so it
+  // has no label/color). Treat it like the limited "no student data access"
+  // view: only the instructor-view link, plus an "Unknown assessment" badge.
+  const assessmentDeleted = issue.assessment?.deleted ?? false;
+
   return (
     <div
       className="list-group-item issue-list-item d-flex flex-row align-items-center"
@@ -254,6 +268,31 @@ function IssueRow({
               {' '}
               (<a href={`${questionPreviewUrl}?variant_id=${issue.variant_id}`}>instructor view</a>)
             </>
+          ) : assessmentDeleted ? (
+            // The assessment was deleted, so the student-view / manual-grading /
+            // assessment-details links would all 404. Only the instructor can
+            // still view the variant (by id if they have student data access,
+            // otherwise by seed), so show just that link.
+            <>
+              {' '}
+              (
+              <a
+                href={`${questionPreviewUrl}?${
+                  issue.showUser
+                    ? `variant_id=${issue.variant_id}`
+                    : `variant_seed=${issue.variant_seed}`
+                }`}
+              >
+                instructor view
+              </a>
+              )
+              {issue.showUser ? null : (
+                <>
+                  {' '}
+                  <NoStudentDataAccessBadge issue={issue} />
+                </>
+              )}
+            </>
           ) : issue.showUser ? (
             <>
               {' '}
@@ -270,16 +309,7 @@ function IssueRow({
               <a href={`${questionPreviewUrl}?variant_seed=${issue.variant_seed}`}>
                 instructor view
               </a>
-              ){' '}
-              <button
-                type="button"
-                className="badge text-bg-warning badge-sm"
-                data-bs-toggle="tooltip"
-                data-bs-html="true"
-                title={`This issue was raised in course instance <strong>${issue.course_instance_short_name}</strong>. You do not have student data access for ${issue.course_instance_short_name}, so you can't view some of the issue details. Student data access can be granted by a course owner on the Staff page.`}
-              >
-                No student data access
-              </button>
+              ) <NoStudentDataAccessBadge issue={issue} />
             </>
           )}
         </div>
@@ -305,13 +335,23 @@ function IssueRow({
         ) : (
           <span className="badge text-bg-warning">Automatically reported</span>
         )}
-        {issue.assessment && issue.course_instance_id && (
-          <AssessmentBadge
-            courseInstanceId={issue.course_instance_id}
-            hideLink={issue.hideAssessmentLink}
-            assessment={issue.assessment}
-          />
-        )}
+        {issue.assessment &&
+          issue.course_instance_id &&
+          (issue.assessment.deleted ||
+          issue.assessment.label == null ||
+          issue.assessment.color == null ? (
+            <span className="badge text-bg-secondary">Unknown assessment</span>
+          ) : (
+            <AssessmentBadge
+              courseInstanceId={issue.course_instance_id}
+              hideLink={issue.hideAssessmentLink}
+              assessment={{
+                assessment_id: issue.assessment.assessment_id,
+                label: issue.assessment.label,
+                color: issue.assessment.color,
+              }}
+            />
+          ))}
         {issue.course_instance_short_name && (
           <span className="badge text-bg-dark">{issue.course_instance_short_name}</span>
         )}
@@ -329,6 +369,20 @@ function getFormattedMessage(issue: Issue) {
   if (!issue.student_message) return '—';
   if (issue.manually_reported) return `"${issue.student_message}"`;
   return issue.student_message;
+}
+
+function NoStudentDataAccessBadge({ issue }: { issue: IssueComputedRow }) {
+  return (
+    <button
+      type="button"
+      className="badge text-bg-warning badge-sm"
+      data-bs-toggle="tooltip"
+      data-bs-html="true"
+      title={`This issue was raised in course instance <strong>${issue.course_instance_short_name}</strong>. You do not have student data access for ${issue.course_instance_short_name}, so you can't view some of the issue details. Student data access can be granted by a course owner on the Staff page.`}
+    >
+      No student data access
+    </button>
+  );
 }
 
 function CloseMatchingIssuesModal({
