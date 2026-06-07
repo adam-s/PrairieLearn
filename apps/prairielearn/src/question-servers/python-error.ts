@@ -11,8 +11,26 @@ const NOTE_PREFIX = '[NOTE] ';
 //   - the worker's Rich excepthook:  `questions/q/server.py:3 in generate`
 // The trailing `, line N` / `:N in name` (with a space-free path before the `:`)
 // is what distinguishes a real frame header from an ordinary message line that
-// merely starts with `File "` or merely mentions a `path:line`.
+// merely starts with `File "` or merely mentions a `path:line`. This shape is
+// *necessary* but not *sufficient*: a CPython-style `File "data.txt", line 99`
+// (or a Rich-style `other.py:10 in foo`) can legitimately appear INSIDE an
+// exception message, so a match is only treated as a frame when it falls within
+// a traceback's frame region (see `extractPythonExceptionSummary`).
 const FRAME_HEADER = /^File ".*", line \d+|^\S+:\d+ in \S/;
+
+// A frame's source-context line: indented source (`    <source>`) or Rich's
+// line-number gutter / pointer forms (`  23 <source>`, `❱ 24 <source>`,
+// `> 24 <source>`). The exception summary's first line starts with the type
+// name, never with whitespace or a pointer, so this never matches it.
+const SOURCE_CONTEXT = /^[\s❱>]/;
+
+// The banner / connector lines that *introduce* a traceback's frame region. Only
+// after one of these (and before the exception summary's type line) do we treat a
+// `FRAME_HEADER`-shaped line as an actual frame. Chained exceptions repeat the
+// banner after a connector, so both reopen a frame region.
+const TRACEBACK_BANNER = /^Traceback \(most recent call last\)/;
+const CHAIN_CONNECTOR =
+  /^(During handling of the above exception|The above exception was the direct cause)/;
 
 /**
  * Pull the human-readable summary out of a Python worker traceback.
@@ -41,59 +59,81 @@ export function extractPythonExceptionSummary(outputBoth: string): string | null
     .split('\n')
     .map((line) => line.trimEnd());
 
-  // Notes render after the exception summary; collect them as extra context.
-  const notes: string[] = [];
-  let i = lines.length - 1;
-
-  const skipBlanks = () => {
-    while (i >= 0 && lines[i] === '') i--;
+  const skipBlanksBack = (idx: number) => {
+    while (idx >= 0 && lines[idx] === '') idx--;
+    return idx;
   };
 
-  skipBlanks();
-  while (i >= 0 && lines[i].startsWith(NOTE_PREFIX)) {
-    notes.unshift(lines[i].slice(NOTE_PREFIX.length));
-    i--;
-    skipBlanks();
-  }
-
-  // `i` now points at the LAST line of the exception-summary block. That block is
-  // `ExceptionType: <message>` plus any continuation lines of a multi-line message
-  // — everything between the traceback's frame region and the notes. We capture
-  // the whole block, not just its final line, so the exception type and the full
-  // message survive in the headline (the full traceback stays in the console-log
-  // panel).
-  if (i < 0) return null;
-  const end = i;
-
-  // Anchor on the LAST frame header. A traceback's frame region is a run of
-  // `<frame header>` + source-context lines; the exception summary begins on the
-  // first real line after the final frame's source context. The frame header is
-  // the one piece of scaffolding that can't be confused with a message line, so
-  // we locate the last one, then skip its trailing source-context lines.
-  let header = -1;
-  for (let j = end; j >= 0; j--) {
-    if (FRAME_HEADER.test(lines[j].trimStart())) {
-      header = j;
+  // Notes render after the exception summary; collect them as extra context. A
+  // single note may itself be MULTI-LINE — the worker prints it as
+  // `Text.assemble(("[NOTE] ", …), note)`, so only the note's FIRST line carries
+  // the `[NOTE] ` prefix and its continuation lines do not. We anchor on the
+  // first `[NOTE] ` line and absorb everything below it as note text (stripping
+  // the prefix where present), so the literal `[NOTE] ` scaffolding never leaks
+  // into the headline and a note's continuation lines aren't mistaken for the
+  // exception message.
+  const lastIdx = skipBlanksBack(lines.length - 1);
+  let firstNote = -1;
+  for (let j = 0; j <= lastIdx; j++) {
+    if (lines[j].startsWith(NOTE_PREFIX)) {
+      firstNote = j;
       break;
     }
   }
-
-  // Source-context lines are the only thing between the last header and the
-  // summary. In both formats they begin with whitespace or Rich's `❱`/`>` pointer
-  // (classic: `    <source>`; Rich: `  23 <source>` / `❱ 24 <source>`). The
-  // exception summary's first line starts with the type name, never whitespace,
-  // so the block begins at the first non-blank, non-indented line after the
-  // header. (When there's no frame header at all — e.g. output that is only the
-  // summary — scan from the top.)
-  let start = end + 1;
-  for (let j = header + 1; j <= end; j++) {
-    if (lines[j] === '' || /^[\s❱>]/.test(lines[j])) continue;
-    start = j;
-    break;
+  const notes: string[] = [];
+  let end = lastIdx;
+  if (firstNote !== -1) {
+    for (let j = firstNote; j <= lastIdx; j++) {
+      if (lines[j].startsWith(NOTE_PREFIX)) notes.push(lines[j].slice(NOTE_PREFIX.length));
+      else if (lines[j] !== '') notes.push(lines[j]);
+    }
+    end = skipBlanksBack(firstNote - 1);
   }
 
-  // Nothing but scaffolding after the last header → no summary recovered.
-  if (start > end) return null;
+  // `end` now points at the LAST line of the exception-summary block — everything
+  // between the traceback's frame region and the notes. The block is
+  // `ExceptionType: <message>` plus any continuation lines of a multi-line message;
+  // we capture the whole block, not just its final line, so the exception type and
+  // the full message survive in the headline (the full traceback stays in the
+  // console-log panel). With no summary block, fall back to any notes alone.
+  if (end < 0) return notes.length ? notes.join('\n') : null;
+
+  // Anchor on the end of the LAST traceback frame region. A frame region is a run
+  // of `<frame header>` + that frame's source-context lines, introduced by a
+  // `Traceback (most recent call last)` banner (or a chained-exception
+  // connector). The exception summary begins on the first real line after the
+  // final region. Crucially, a `FRAME_HEADER`-shaped line is treated as a frame
+  // ONLY while we're inside such a region (`expectingFrames`): once the summary's
+  // type line closes the region, a `File "...", line N` (or `path:N in fn`) that
+  // appears inside the exception MESSAGE no longer resets the anchor — that
+  // CPython-style location in a config/file-load message is exactly what used to
+  // be misread as "the last frame," leaving nothing after it and returning null.
+  let frameRegionEnd = -1;
+  let expectingFrames = false;
+  for (let j = 0; j <= end; j++) {
+    const stripped = lines[j].trimStart();
+    if (TRACEBACK_BANNER.test(stripped) || CHAIN_CONNECTOR.test(stripped)) {
+      expectingFrames = true;
+    } else if (expectingFrames && FRAME_HEADER.test(stripped)) {
+      frameRegionEnd = j;
+    } else if (expectingFrames && (lines[j] === '' || SOURCE_CONTEXT.test(lines[j]))) {
+      if (lines[j] !== '') frameRegionEnd = j;
+    } else {
+      // A non-frame, non-source line inside a region is the summary's type line:
+      // the message begins here, so stop treating later frame-shaped lines as
+      // frames.
+      expectingFrames = false;
+    }
+  }
+
+  // The summary begins at the first non-blank, non-source line after the last
+  // frame region. (When there's no frame region at all — e.g. output that is only
+  // the summary — `frameRegionEnd` is -1 and we scan from the top.)
+  let start = frameRegionEnd + 1;
+  while (start <= end && (lines[start] === '' || SOURCE_CONTEXT.test(lines[start]))) start++;
+
+  // Nothing but scaffolding after the last frame region → no summary recovered.
+  if (start > end) return notes.length ? notes.join('\n') : null;
 
   const summary = lines.slice(start, end + 1);
   return [...summary, ...notes].join('\n');
