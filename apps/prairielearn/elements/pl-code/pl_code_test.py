@@ -1,8 +1,5 @@
-import importlib
-
+import pl_code as code
 import pytest
-
-code = importlib.import_module("pl-code")
 
 
 @pytest.mark.parametrize(
