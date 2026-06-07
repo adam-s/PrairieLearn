@@ -308,7 +308,6 @@ export const htmlMustacheConfig: Config = {
     },
     { name: 'pl-hide-in-manual-grading' },
     { name: 'pl-manual-grading-only' },
-    { name: 'pl-hide-in-answer-panel' },
     { name: 'pl-workspace' },
     { name: 'pl-hide-in-panel' },
     // Deprecated elements
@@ -322,7 +321,6 @@ export const htmlMustacheConfig: Config = {
       name: 'pl-matrix-output',
       children: [{ name: 'variable' }],
     },
-    { name: 'pl-github-link' },
     // pl-drawing
     {
       name: 'pl-drawing',

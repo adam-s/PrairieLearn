@@ -99,6 +99,25 @@ def process(
             return element
 
         if element.tag not in elements:
+            # A `pl-`-prefixed tag that isn't a known core or course element is
+            # almost always a typo (e.g. `pl-nubmer-input`) or a reference to an
+            # element that doesn't exist. Silently leaving it in the output
+            # produces a broken question with no feedback, so we error instead.
+            #
+            # This is only enforced during the `render` phase. `render` uses
+            # `traverse_and_replace`, which processes parents before children and
+            # lets each element replace its own subtree, so the renderer only
+            # ever reaches a `pl-*` tag that genuinely has no handler. The other
+            # phases use `traverse_and_execute`, which walks *every* descendant
+            # node -- including "child" tags such as `pl-answer` that a parent
+            # element (`pl-checkbox`, `pl-multiple-choice`, ...) consumes itself
+            # at render time and that are never registered as standalone
+            # elements. Flagging those would break valid questions.
+            #
+            # Any non-`pl-` tag (plain HTML, or a course element not prefixed
+            # `pl-`) is always left untouched.
+            if phase == "render" and element.tag.startswith("pl-"):
+                raise ValueError(f"Unknown element: {element.tag}")
             return element
 
         try:
