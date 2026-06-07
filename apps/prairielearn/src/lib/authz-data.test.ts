@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { afterAll, assert, beforeAll, beforeEach, describe, it, vi } from 'vitest';
 
-import { execute, loadSqlEquiv } from '@prairielearn/postgres';
+import { execute, loadSqlEquiv, queryRow } from '@prairielearn/postgres';
 
 import * as publishingExtensionsModel from '../models/course-instance-publishing-extensions.js';
 import * as enrollmentModel from '../models/enrollment.js';
@@ -11,8 +11,15 @@ import * as helperDb from '../tests/helperDb.js';
 import {
   calculateModernCourseInstanceStudentAccess,
   checkCourseInstanceLegacyAccess,
+  constructCourseOrInstanceContext,
 } from './authz-data.js';
-import type { CourseInstance, CourseInstancePublishingExtension, Enrollment } from './db-types.js';
+import {
+  type CourseInstance,
+  type CourseInstancePublishingExtension,
+  type Enrollment,
+  type User,
+  UserSchema,
+} from './db-types.js';
 
 const sql = loadSqlEquiv(import.meta.url);
 
@@ -599,5 +606,54 @@ describe('checkCourseInstanceLegacyAccess', () => {
     });
 
     assert.deepEqual(result, []);
+  });
+});
+
+describe('constructCourseOrInstanceContext', () => {
+  beforeAll(helperDb.before);
+  afterAll(helperDb.after);
+
+  beforeAll(async () => {
+    await setupCheckCourseInstanceLegacyAccessTests();
+  });
+
+  async function selectUser(id: string): Promise<User> {
+    return await queryRow(sql.select_user, { id }, UserSchema);
+  }
+
+  it('sets is_administrator to false for a non-administrator', async () => {
+    // person1@host.com (id 1000) has student access to course instance 11
+    // via a legacy access rule covering 2010.
+    const user = await selectUser('1000');
+
+    const { authzData } = await constructCourseOrInstanceContext({
+      user,
+      course_id: null,
+      course_instance_id: '11',
+      ip: '127.0.0.1',
+      req_date: new Date('2010-07-07T06:06:06Z'),
+      is_administrator: false,
+    });
+
+    assert.isNotNull(authzData);
+    assert.isFalse(authzData.is_administrator);
+  });
+
+  it('sets is_administrator to true for an administrator', async () => {
+    // Administrators are granted Owner access to any course, so the context is
+    // always constructed (non-null) regardless of explicit access rules.
+    const user = await selectUser('1001');
+
+    const { authzData } = await constructCourseOrInstanceContext({
+      user,
+      course_id: '10',
+      course_instance_id: null,
+      ip: '127.0.0.1',
+      req_date: new Date('2010-07-07T06:06:06Z'),
+      is_administrator: true,
+    });
+
+    assert.isNotNull(authzData);
+    assert.isTrue(authzData.is_administrator);
   });
 });

@@ -60,3 +60,11 @@ VALUES
     $end_date::timestamptz,
     $institution
   );
+
+-- BLOCK select_user
+SELECT
+  *
+FROM
+  users
+WHERE
+  id = $id;

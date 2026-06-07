@@ -565,6 +565,9 @@ export async function authzCourseOrInstance(req: Request, res: Response) {
       return {
         authzData: withBrand<PlainAuthzData>({
           user: effectiveUserData ? effectiveUserData.user : authnAuthzData.user,
+          is_administrator: effectiveUserData
+            ? effectiveUserData.is_administrator
+            : res.locals.is_administrator,
           course_role: 'None',
           ...calculateCourseRolePermissions('None'),
           ...(req.params.course_instance_id

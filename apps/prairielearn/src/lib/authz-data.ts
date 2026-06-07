@@ -249,6 +249,7 @@ export async function constructCourseOrInstanceContext({
 
   const authzData = {
     user,
+    is_administrator,
     mode,
     course_role,
     ...calculateCourseRolePermissions(course_role),
